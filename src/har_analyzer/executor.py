@@ -1,17 +1,58 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Tuple
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 
 import jwt
 
 from .models import AttackHypothesis, EndpointBudget, ExecutionResult, RequestRecord, RunConfig
 
 Transport = Callable[[AttackHypothesis, RunConfig], ExecutionResult]
+
+
+def validate_hypothesis_url(url: str, allowed_domains: list, config: RunConfig) -> Tuple[bool, str]:
+    """
+    Validate URL is safe to execute (SSRF protection).
+    Returns: (is_valid, error_reason)
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        return False, f"Invalid URL format: {e}"
+
+    # 1. Only http/https allowed
+    if parsed.scheme not in ('http', 'https'):
+        return False, f"Unsupported scheme: {parsed.scheme} (only http/https allowed)"
+
+    # 2. Domain must match config.target_domains
+    netloc = parsed.netloc.lower()
+    domain_match = False
+    for domain in allowed_domains:
+        domain_lower = domain.lower()
+        if netloc == domain_lower or netloc.endswith('.' + domain_lower):
+            domain_match = True
+            break
+
+    if not domain_match:
+        return False, f"Domain {netloc} not in allowed list"
+
+    # 3. Block private/loopback IPs (127.0.0.1, 192.168.*, 10.*, etc.)
+    try:
+        hostname = parsed.hostname
+        if hostname:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback:
+                return False, f"Private/loopback IP not allowed: {hostname}"
+    except ValueError:
+        pass  # Not an IP, that's fine
+
+    return True, ""
 
 
 def hash_request(hypothesis: AttackHypothesis) -> str:
@@ -62,6 +103,18 @@ def execute_hypothesis(
     config: RunConfig,
     transport: Optional[Transport] = None,
 ) -> ExecutionResult:
+    # SSRF Protection: Validate URL before executing
+    is_valid, error_msg = validate_hypothesis_url(hypothesis.url, config.target_domains, config)
+    if not is_valid:
+        return ExecutionResult(
+            hypothesis_id=hypothesis.hypothesis_id,
+            request_id=hypothesis.original_request_id,
+            method=hypothesis.method,
+            url=hypothesis.url,
+            outcome="validation_failed",
+            error=f"URL validation failed: {error_msg}",
+        )
+
     if detect_expired_bearer(hypothesis.headers):
         return ExecutionResult(
             hypothesis_id=hypothesis.hypothesis_id,
