@@ -69,13 +69,30 @@ class BuiltinHeuristicClient(LLMClient):
         config: RunConfig,
     ) -> List[AttackHypothesis]:
         candidates: List[AttackHypothesis] = []
+
+        # 1. Try numeric ID swaps (existing)
         resource_swap = _numeric_swap_hypothesis(record)
         if resource_swap:
             candidates.append(resource_swap)
+
+        # 2. Try UUID swaps (NEW)
+        uuid_swap = _string_id_hypothesis(record)
+        if uuid_swap:
+            candidates.append(uuid_swap)
+
+        # 3. Try alphanumeric slug swaps (NEW)
+        slug_swap = _alphanumeric_slug_hypothesis(record)
+        if slug_swap:
+            candidates.append(slug_swap)
+
+        # 4. Try query param swaps (existing)
         query_swaps = _query_param_hypotheses(record)
         candidates.extend(query_swaps)
+
+        # 5. Try auth removal (existing)
         auth_tests = _auth_hypotheses(record)
         candidates.extend(auth_tests)
+
         return candidates[: config.per_endpoint_hypothesis_cap]
 
 
@@ -423,6 +440,83 @@ def get_llm_client(config: RunConfig) -> LLMClient:
     if not config.llm_base_url or not config.llm_api_key:
         raise RuntimeError("Configured LLM provider '%s' requires HAR_ANALYZER_LLM_BASE_URL and HAR_ANALYZER_LLM_API_KEY." % config.provider)
     return OpenAICompatibleClient(config.llm_base_url, config.llm_api_key, config.model)
+
+
+def _string_id_hypothesis(record: RequestRecord) -> Optional[AttackHypothesis]:
+    """
+    Test non-numeric resource IDs (UUIDs).
+    Pattern: 550e8400-e29b-41d4-a716-446655440000
+    """
+    import re
+
+    uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    matches = re.findall(uuid_pattern, record.url, re.IGNORECASE)
+
+    if not matches:
+        return None
+
+    original_uuid = matches[0]
+    test_uuid = "550e8400-e29b-41d4-a716-446655440000"
+
+    modified_url = record.url.replace(original_uuid, test_uuid, 1)
+
+    return AttackHypothesis(
+        hypothesis_id="hyp-%s" % uuid.uuid4().hex[:12],
+        original_request_id=record.request_id,
+        endpoint_key=record.endpoint_key(),
+        attack_type="IDOR",
+        severity="high",
+        expected_signal="The server returns another resource instead of denying access.",
+        rationale="UUID appears to be a resource identifier in the path; testing with different UUID.",
+        method=record.method,
+        url=modified_url,
+        headers=dict(record.request_headers),
+        body=record.request_body,
+        mutation_summary="UUID swap: %s -> %s" % (original_uuid[:8], test_uuid[:8]),
+    )
+
+
+def _alphanumeric_slug_hypothesis(record: RequestRecord) -> Optional[AttackHypothesis]:
+    """
+    Test alphanumeric slugs that look like resource IDs.
+    Pattern: /api/posts/a1b2c3d4 (6+ alphanumeric characters)
+    """
+    import re
+
+    slug_pattern = r'/([a-z0-9]{6,}?)(?:/|$)'
+    matches = re.findall(slug_pattern, record.path, re.IGNORECASE)
+
+    if not matches:
+        return None
+
+    original_slug = matches[-1]  # Get last match (most likely the ID)
+
+    # Skip known endpoint names
+    if original_slug.lower() in ('users', 'posts', 'admin', 'api', 'v1', 'v2', 'public', 'private'):
+        return None
+
+    # Create test slug by incrementing last character
+    if original_slug[-1] != 'z':
+        test_slug = original_slug[:-1] + chr(ord(original_slug[-1]) + 1)
+    else:
+        test_slug = original_slug[:-1] + 'a'
+
+    modified_url = record.url.replace(original_slug, test_slug, 1)
+
+    return AttackHypothesis(
+        hypothesis_id="hyp-%s" % uuid.uuid4().hex[:12],
+        original_request_id=record.request_id,
+        endpoint_key=record.endpoint_key(),
+        attack_type="IDOR",
+        severity="high",
+        expected_signal="The server returns another resource instead of denying access.",
+        rationale="Alphanumeric slug appears to be a resource identifier; testing with different slug.",
+        method=record.method,
+        url=modified_url,
+        headers=dict(record.request_headers),
+        body=record.request_body,
+        mutation_summary="Slug swap: %s -> %s" % (original_slug, test_slug),
+    )
 
 
 def _numeric_swap_hypothesis(record: RequestRecord) -> Optional[AttackHypothesis]:
