@@ -280,7 +280,52 @@ def _build_prompt_context(record: RequestRecord, context: EndpointContext) -> Di
     return prompt_context
 
 
+def _sanitize_header_value(value: str, max_length: int = 200) -> str:
+    """
+    Sanitize header value for safe LLM consumption.
+    - Truncate long values (tokens, etc.)
+    - Redact sensitive patterns
+    """
+    if not value:
+        return ""
+
+    # Redact common secret patterns before sending to LLM
+    redacted = value
+
+    # JWT tokens (Bearer eyJ... or just eyJ...)
+    if "eyJ" in redacted and len(redacted) > 50:
+        redacted = "[JWT_TOKEN_REDACTED]"
+
+    # API keys (long alphanumeric strings, common prefixes)
+    elif (len(redacted) > 32 and
+          redacted.replace("-", "").replace("_", "").isalnum() and
+          any(redacted.startswith(prefix) for prefix in ["sk_", "pk_", "api_", "token_"])):
+        redacted = "[APIKEY_REDACTED]"
+
+    # Truncate if still too long
+    if len(redacted) > max_length:
+        redacted = redacted[:max_length] + "..."
+
+    return redacted
+
+
 def _build_prompt_request(record: RequestRecord, config: RunConfig) -> Dict[str, Any]:
+    # Sanitize headers before sending to LLM (redact auth tokens, API keys, etc.)
+    sanitized_headers = {}
+    for key, value in record.request_headers.items():
+        if key.lower() in ("authorization", "x-api-key", "x-auth-token", "cookie"):
+            # Redact sensitive auth headers
+            sanitized_headers[key] = "[REDACTED_AUTH_HEADER]"
+        else:
+            sanitized_headers[key] = _sanitize_header_value(value)
+
+    response_headers = {}
+    for key, value in record.response_headers.items():
+        if key.lower() in ("authorization", "set-cookie", "x-token"):
+            response_headers[key] = "[REDACTED_HEADER]"
+        else:
+            response_headers[key] = _sanitize_header_value(value)
+
     return {
         "method": record.method,
         "url": record.url,
@@ -288,10 +333,10 @@ def _build_prompt_request(record: RequestRecord, config: RunConfig) -> Dict[str,
         "path": record.path,
         "normalized_path": record.normalized_path(),
         "query_params": dict(record.query_params),
-        "request_headers": dict(record.request_headers),
+        "request_headers": sanitized_headers,
         "request_body": _build_prompt_body(record.request_body, config),
         "response_status": record.response_status,
-        "response_headers": dict(record.response_headers),
+        "response_headers": response_headers,
         "response_body": _build_prompt_body(record.response_body, config),
     }
 
