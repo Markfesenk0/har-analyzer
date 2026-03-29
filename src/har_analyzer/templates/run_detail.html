@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ run.run_id if run else "Run" }} - HAR Analyzer</title>
+    <style>
+      :root {
+        --bg: #f3eee7;
+        --surface: rgba(255, 251, 246, 0.9);
+        --surface-strong: #fffaf3;
+        --border: rgba(90, 66, 46, 0.14);
+        --text: #1f1812;
+        --muted: #6d5d4f;
+        --brand: #165a57;
+        --brand-strong: #0f4442;
+        --danger: #a64b3a;
+        --warning: #b77222;
+        --shadow: 0 22px 60px rgba(61, 44, 28, 0.12);
+        --radius-xl: 28px;
+        --radius-lg: 18px;
+        --radius-md: 12px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(22, 90, 87, 0.18), transparent 26rem),
+          radial-gradient(circle at top right, rgba(183, 114, 34, 0.16), transparent 22rem),
+          linear-gradient(180deg, var(--bg), #faf6f0 55%, #f5efe8);
+      }
+      .page {
+        width: min(1280px, calc(100% - 2rem));
+        margin: 1.5rem auto 2.6rem;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 1rem;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .hero, .panel {
+        background: var(--surface);
+        backdrop-filter: blur(18px);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+      }
+      .hero {
+        padding: 1.5rem;
+        margin-bottom: 1.2rem;
+      }
+      .hero-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+      h1, h2, h3 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", serif;
+      }
+      h1 {
+        font-size: clamp(2rem, 3vw, 3.2rem);
+        line-height: 1;
+        letter-spacing: -0.03em;
+      }
+      .subtitle {
+        margin-top: 0.65rem;
+        color: var(--muted);
+        max-width: 54rem;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.42rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(22, 90, 87, 0.1);
+        color: var(--brand-strong);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+        margin-top: 1.15rem;
+      }
+      .meta-chip {
+        padding: 0.65rem 0.8rem;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(90, 66, 46, 0.11);
+        background: rgba(255, 255, 255, 0.64);
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.9rem;
+        margin-top: 1.3rem;
+      }
+      .stat {
+        padding: 1rem;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.6));
+        border: 1px solid rgba(90, 66, 46, 0.12);
+      }
+      .stat .label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .stat .value {
+        margin-top: 0.35rem;
+        font-size: 1.7rem;
+        font-weight: 700;
+      }
+      .stat .sub {
+        margin-top: 0.28rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1.3rem;
+      }
+      .toolbar form { margin: 0; }
+      .button {
+        appearance: none;
+        border: none;
+        cursor: pointer;
+        border-radius: 999px;
+        padding: 0.84rem 1.15rem;
+        font: inherit;
+        font-weight: 700;
+      }
+      .button-primary {
+        color: white;
+        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+        box-shadow: 0 14px 30px rgba(22, 90, 87, 0.24);
+      }
+      .button-neutral {
+        color: var(--text);
+        background: rgba(255,255,255,0.78);
+        border: 1px solid rgba(90, 66, 46, 0.16);
+      }
+      .button-danger {
+        color: white;
+        background: linear-gradient(135deg, var(--danger), #8b392d);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr;
+        gap: 1.2rem;
+      }
+      .panel {
+        padding: 1.35rem;
+      }
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 0.9rem;
+      }
+      .panel-header p {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+      }
+      .table-wrap {
+        overflow-x: auto;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(90, 66, 46, 0.1);
+        background: rgba(255,255,255,0.5);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        padding: 0.9rem 0.8rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(90, 66, 46, 0.08);
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        background: rgba(255,255,255,0.74);
+      }
+      .endpoint-link {
+        font-weight: 700;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .finding-card {
+        padding: 1rem;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(90, 66, 46, 0.1);
+        background: rgba(255,255,255,0.56);
+      }
+      .finding-card + .finding-card {
+        margin-top: 0.9rem;
+      }
+      pre {
+        margin: 0.8rem 0 0;
+        padding: 0.95rem;
+        border-radius: var(--radius-md);
+        background: #f6efe7;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        border: 1px solid rgba(90, 66, 46, 0.08);
+      }
+      .empty {
+        color: var(--muted);
+        padding: 0.4rem 0;
+      }
+      @media (max-width: 1024px) {
+        .layout, .stats {
+          grid-template-columns: 1fr;
+        }
+        .hero-top {
+          flex-direction: column;
+        }
+      }
+      @media (max-width: 720px) {
+        .page {
+          width: min(100% - 1rem, 1280px);
+          margin: 1rem auto 2rem;
+        }
+        .hero, .panel {
+          padding: 1.05rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <a class="back-link" href="/">Back to runs</a>
+      {% if run %}
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <span class="pill" id="run-status">{{ run.status }}</span>
+            <h1>{{ run.run_id }}</h1>
+            <p class="subtitle" id="run-current-endpoint">Current endpoint: {{ run.current_endpoint or "idle" }}</p>
+          </div>
+          <div class="meta-chip" id="run-last-error">Last error: {{ run.last_error or "none" }}</div>
+        </div>
+
+        <div class="hero-meta">
+          <div class="meta-chip">HAR: {{ run.har_path.split("/")[-1] if "/" in run.har_path else run.har_path }}</div>
+          <div class="meta-chip">Scope: {{ ", ".join(run.target_domains) }}</div>
+          {% if run.config %}
+          <div class="meta-chip">Provider: {{ run.config.provider }}</div>
+          <div class="meta-chip">Model: {{ run.config.model }}</div>
+          <div class="meta-chip">Step mode: {{ run.config.step_mode }}</div>
+          {% endif %}
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="label">Progress</div>
+            <div class="value" id="run-progress">{{ run.processed_requests }} / {{ run.total_requests }}</div>
+            <div class="sub">Processed scoped requests</div>
+          </div>
+          <div class="stat">
+            <div class="label">Findings</div>
+            <div class="value" id="run-findings">{{ run.findings_count }}</div>
+            <div class="sub">Confirmed issues so far</div>
+          </div>
+          <div class="stat">
+            <div class="label">Markdown</div>
+            <div class="value">{{ "ready" if run.report_markdown_path else "pending" }}</div>
+            <div class="sub">{{ run.report_markdown_path or "Waiting for final report" }}</div>
+          </div>
+          <div class="stat">
+            <div class="label">JSON</div>
+            <div class="value">{{ "ready" if run.report_json_path else "pending" }}</div>
+            <div class="sub">{{ run.report_json_path or "Waiting for final report" }}</div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <form method="post" action="/runs/{{ run.run_id }}/pause">
+            <button class="button button-neutral" type="submit">Pause</button>
+          </form>
+          <form method="post" action="/runs/{{ run.run_id }}/resume">
+            <button class="button button-primary" type="submit">Resume</button>
+          </form>
+          <form method="post" action="/runs/{{ run.run_id }}/cancel">
+            <button class="button button-danger" type="submit">Cancel</button>
+          </form>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="layout">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Filtered API Calls</h2>
+              <p>Each row represents one scoped request in the active run. Click through for the full prompt and replay trace.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Endpoint</th>
+                  <th>Status</th>
+                  <th>Stage</th>
+                  <th>Hypotheses</th>
+                  <th>Executed</th>
+                  <th>Findings</th>
+                  <th>Summary</th>
+                  <th>Debug</th>
+                </tr>
+              </thead>
+              <tbody id="request-items-body">
+                {% for item in request_items %}
+                <tr>
+                  <td>{{ item.entry_index }}</td>
+                  <td>
+                    <a class="endpoint-link" href="/runs/{{ run.run_id }}/requests/{{ item.request_id }}">{{ item.method }} {{ item.path }}</a>
+                    <div class="muted">{{ item.host }}</div>
+                  </td>
+                  <td><span class="pill">{{ item.status }}</span></td>
+                  <td>{{ item.stage }}</td>
+                  <td>{{ item.hypothesis_count }}</td>
+                  <td>{{ item.executed_count }}</td>
+                  <td>{{ item.findings_count }}</td>
+                  <td>
+                    {{ item.summary or "Pending" }}
+                    {% if item.approval_state and item.approval_state != "not_required" %}
+                    <div class="muted">Approval: {{ item.approval_state }}</div>
+                    {% endif %}
+                    {% if item.error %}
+                    <div class="muted">{{ item.error }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if item.debug_artifact_path %}
+                    <a href="/runs/{{ run.run_id }}/debug/{{ item.request_id }}">Raw LLM response</a>
+                    {% else %}
+                    <span class="muted">None</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="9" class="empty">No filtered API calls stored yet.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Findings</h2>
+              <p>Confirmed observations from executed hypotheses.</p>
+            </div>
+          </div>
+          <div id="findings-list">
+            {% for finding in findings %}
+            <article class="finding-card">
+              <span class="pill">{{ finding.severity }}</span>
+              <h3 style="margin-top:0.65rem;">{{ finding.title }}</h3>
+              <p class="muted" style="margin-top:0.45rem;">{{ finding.summary }}</p>
+              <pre>{{ finding.evidence | tojson(indent=2) }}</pre>
+            </article>
+            {% else %}
+            <div class="empty">No findings stored for this run yet.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </div>
+
+    {% if run %}
+    <script>
+      const runId = "{{ run.run_id }}";
+      let pollTimer = null;
+      let pollInFlight = false;
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+      function renderFindings(findings) {
+        const container = document.getElementById("findings-list");
+        if (!findings.length) {
+          container.innerHTML = '<div class="empty">No findings stored for this run yet.</div>';
+          return;
+        }
+        container.innerHTML = findings.map(finding => `
+          <article class="finding-card">
+            <span class="pill">${escapeHtml(finding.severity || "unknown")}</span>
+            <h3 style="margin-top:0.65rem;">${escapeHtml(finding.title)}</h3>
+            <p class="muted" style="margin-top:0.45rem;">${escapeHtml(finding.summary)}</p>
+            <pre>${escapeHtml(JSON.stringify(finding.evidence || [], null, 2))}</pre>
+          </article>
+        `).join("");
+      }
+      function renderRequestItems(items) {
+        const body = document.getElementById("request-items-body");
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="9" class="empty">No filtered API calls stored yet.</td></tr>';
+          return;
+        }
+        body.innerHTML = items.map(item => `
+          <tr>
+            <td>${escapeHtml(item.entry_index)}</td>
+            <td>
+              <a class="endpoint-link" href="/runs/${encodeURIComponent(runId)}/requests/${encodeURIComponent(item.request_id)}">${escapeHtml(item.method)} ${escapeHtml(item.path)}</a>
+              <div class="muted">${escapeHtml(item.host)}</div>
+            </td>
+            <td><span class="pill">${escapeHtml(item.status)}</span></td>
+            <td>${escapeHtml(item.stage)}</td>
+            <td>${escapeHtml(item.hypothesis_count)}</td>
+            <td>${escapeHtml(item.executed_count)}</td>
+            <td>${escapeHtml(item.findings_count)}</td>
+            <td>${escapeHtml(item.summary || "Pending")}${item.approval_state && item.approval_state !== "not_required" ? `<div class="muted">Approval: ${escapeHtml(item.approval_state)}</div>` : ""}${item.error ? `<div class="muted">${escapeHtml(item.error)}</div>` : ""}</td>
+            <td>${item.debug_artifact_path ? `<a href="/runs/${encodeURIComponent(runId)}/debug/${encodeURIComponent(item.request_id)}">Raw LLM response</a>` : '<span class="muted">None</span>'}</td>
+          </tr>
+        `).join("");
+      }
+      function schedulePoll(delayMs) {
+        if (pollTimer) {
+          window.clearTimeout(pollTimer);
+        }
+        pollTimer = window.setTimeout(pollRun, delayMs);
+      }
+      async function pollRun() {
+        if (pollInFlight) {
+          return;
+        }
+        pollInFlight = true;
+        try {
+          const response = await fetch(`/runs/${encodeURIComponent(runId)}/snapshot`, { cache: "no-store" });
+          if (!response.ok) {
+            schedulePoll(3000);
+            return;
+          }
+          const data = await response.json();
+          if (!data.run) {
+            schedulePoll(3000);
+            return;
+          }
+          document.getElementById("run-status").textContent = data.run.status;
+          document.getElementById("run-progress").textContent = `${data.run.processed_requests} / ${data.run.total_requests}`;
+          document.getElementById("run-current-endpoint").textContent = `Current endpoint: ${data.run.current_endpoint || "idle"}`;
+          document.getElementById("run-last-error").textContent = `Last error: ${data.run.last_error || "none"}`;
+          document.getElementById("run-findings").textContent = data.run.findings_count;
+          renderRequestItems(data.request_items || []);
+          renderFindings(data.findings || []);
+          if (["running", "paused", "cancel_requested", "awaiting_approval"].includes(data.run.status)) {
+            schedulePoll(2000);
+          }
+        } catch (_error) {
+          schedulePoll(3000);
+        } finally {
+          pollInFlight = false;
+        }
+      }
+      window.addEventListener("focus", () => pollRun());
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          pollRun();
+        }
+      });
+      if (["running", "paused", "cancel_requested", "awaiting_approval"].includes("{{ run.status }}")) {
+        pollRun();
+      }
+    </script>
+    {% endif %}
+  </body>
+</html>

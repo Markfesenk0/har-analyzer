@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "HAR Analyzer Web",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/har_scanner.py",
+      "args": ["serve", "--host", "127.0.0.1", "--port", "8765"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    }
+  ]
+}

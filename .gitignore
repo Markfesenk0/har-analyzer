@@ -1,0 +1,15 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+*.sqlite
+*.sqlite3
+artifacts/
+reports/
+HAR files/*.har
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+

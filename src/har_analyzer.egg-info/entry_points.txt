@@ -1,0 +1,2 @@
+[console_scripts]
+har-analyzer = har_analyzer.cli:main
