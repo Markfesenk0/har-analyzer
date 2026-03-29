@@ -110,13 +110,59 @@ def _indicates_access_control_issue(
     hypothesis: AttackHypothesis,
     result: ExecutionResult,
 ) -> bool:
-    if result.status_code is None or result.status_code >= 400:
+    """
+    Improved detection: Check if modified request succeeded when original failed,
+    or returned different data than original.
+    """
+    if result.status_code is None:
         return False
-    if hypothesis.attack_type in {"IDOR", "BOLA"}:
-        return _structurally_similar(record.response_body or "", result.response_body or "")
+
+    # Signal 1: Status code changed from 401/403 to 2xx
+    # Strong indicator of access control bypass
+    if record.response_status in (401, 403) and result.status_code and 200 <= result.status_code < 300:
+        return True
+
+    # Signal 2: Both succeeded (2xx) but returned different user/resource IDs
+    if record.response_status and 200 <= record.response_status < 300:
+        if result.status_code and 200 <= result.status_code < 300:
+            if hypothesis.attack_type in {"IDOR", "BOLA"}:
+                # Check if responses are structurally similar (same shape)
+                if _structurally_similar(record.response_body or "", result.response_body or ""):
+                    # Check if resource IDs are different
+                    if _contains_different_resource_id(record.response_body or "", result.response_body or ""):
+                        return True
+
+    # Signal 3: Response size increased significantly
+    # Indicates more data was returned than original (leaked data)
+    size_increase = len(result.response_body or "") - len(record.response_body or "")
+    if size_increase > 200:  # Threshold: 200 bytes increase = likely leaked data
+        return True
+
+    # Signal 4: Auth bypass - got response when should have been denied
     if hypothesis.attack_type == "auth_bypass":
-        return bool(result.response_body) and result.response_body != record.response_body
+        if record.response_status in (401, 403):
+            if result.response_body and result.status_code and 200 <= result.status_code < 300:
+                return True
+
     return False
+
+
+def _contains_different_resource_id(original: str, modified: str) -> bool:
+    """
+    Check if responses contain different user/resource IDs.
+    Looks for patterns like "user_id": 123 or "id": "abc"
+    """
+    try:
+        # Pattern: "user_id": 123 OR "user_id": "abc" OR 'user_id': 123
+        id_pattern = r'["\']?(?:user_?id|account_?id|owner_?id|id)["\']?\s*:\s*([0-9]+|["\'][^"\']+["\'])'
+
+        orig_ids = set(re.findall(id_pattern, original, re.IGNORECASE))
+        mod_ids = set(re.findall(id_pattern, modified, re.IGNORECASE))
+
+        # If sets are different and both have values, IDs changed
+        return len(orig_ids) > 0 and len(mod_ids) > 0 and orig_ids != mod_ids
+    except Exception:
+        return False
 
 
 def _structurally_similar(original: str, replayed: str) -> bool:
