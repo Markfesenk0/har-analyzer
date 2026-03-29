@@ -12,6 +12,91 @@ from .redaction import redact_string, redact_value
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 TOKEN_HINT_RE = re.compile(r"\b(?:eyJ[a-zA-Z0-9._\-]+|[A-F0-9]{24,}|[A-Za-z0-9_\-]{32,})\b")
 
+# Additional secret/PII patterns
+PHONE_RE = re.compile(r"(?:\+?1?\s?)?\(?([0-9]{3})\)?[\s.-]?([0-9]{3})[\s.-]?([0-9]{4})\b")
+SSN_RE = re.compile(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b")
+CREDIT_CARD_RE = re.compile(r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11})\b")
+API_KEY_RE = re.compile(r"(?:api[_-]?key|apikey|api_token|access_token|secret_key|private_key|password)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{16,})['\"]?", re.IGNORECASE)
+AWS_KEY_RE = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
+PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA|DSA|EC|PGP|OPENSSH) PRIVATE KEY")
+
+
+def scan_response_for_secrets(response_body: str) -> List[Dict[str, str]]:
+    """
+    Scan response body for exposed secrets and PII.
+    Returns list of discovered secrets.
+    """
+    if not response_body:
+        return []
+
+    findings = []
+
+    # Email addresses
+    if EMAIL_RE.search(response_body):
+        findings.append({
+            "type": "email",
+            "severity": "medium",
+            "message": "Email address detected in response",
+        })
+
+    # Phone numbers
+    if PHONE_RE.search(response_body):
+        findings.append({
+            "type": "phone",
+            "severity": "medium",
+            "message": "Phone number detected in response",
+        })
+
+    # Social Security Numbers
+    if SSN_RE.search(response_body):
+        findings.append({
+            "type": "ssn",
+            "severity": "critical",
+            "message": "Social Security Number pattern detected",
+        })
+
+    # Credit card numbers
+    if CREDIT_CARD_RE.search(response_body):
+        findings.append({
+            "type": "credit_card",
+            "severity": "critical",
+            "message": "Credit card number pattern detected",
+        })
+
+    # JWT or Bearer tokens
+    if TOKEN_HINT_RE.search(response_body):
+        findings.append({
+            "type": "jwt_token",
+            "severity": "high",
+            "message": "JWT or Bearer token detected in response",
+        })
+
+    # API Keys
+    if API_KEY_RE.search(response_body):
+        findings.append({
+            "type": "api_key",
+            "severity": "high",
+            "message": "API key or access token detected in response",
+        })
+
+    # AWS keys
+    if AWS_KEY_RE.search(response_body):
+        findings.append({
+            "type": "aws_key",
+            "severity": "critical",
+            "message": "AWS access key or secret detected",
+        })
+
+    # Private keys
+    if PRIVATE_KEY_RE.search(response_body):
+        findings.append({
+            "type": "private_key",
+            "severity": "critical",
+            "message": "Private key material detected in response",
+        })
+
+    return findings
+
 
 def evaluate_result(
     record: RequestRecord,
@@ -21,6 +106,8 @@ def evaluate_result(
     findings: List[Finding] = []
     if result.outcome == "token_expired":
         return findings
+
+    # Check for access control issues
     if _indicates_access_control_issue(record, hypothesis, result):
         findings.append(
             Finding(
@@ -40,8 +127,40 @@ def evaluate_result(
                 reproduction_curl=build_curl_command(hypothesis),
             )
         )
+
+    # Scan for secrets/PII in response
+    secret_detections = scan_response_for_secrets(result.response_body or "")
+    if secret_detections:
+        severity_levels = [d["severity"] for d in secret_detections]
+        # Use highest severity from detected secrets
+        max_severity = "critical" if "critical" in severity_levels else ("high" if "high" in severity_levels else "medium")
+
+        findings.append(
+            Finding(
+                finding_id="finding-%s" % uuid.uuid4().hex[:12],
+                request_id=record.request_id,
+                hypothesis_id=hypothesis.hypothesis_id,
+                title="Sensitive data exposed: %s" % record.endpoint_key(),
+                attack_type="excessive_data_exposure",
+                severity=max_severity,
+                confidence="high",
+                endpoint=record.endpoint_key(),
+                summary="Response contains %d type(s) of sensitive data: %s" % (
+                    len(secret_detections),
+                    ", ".join(d["type"] for d in secret_detections),
+                ),
+                expected_signal=hypothesis.expected_signal,
+                owasp=["API3:2023 Broken Object Property Level Authorization", "API8:2023 Security Misconfiguration"],
+                evidence=[{"type": d["type"], "message": d["message"]} for d in secret_detections] + _build_evidence(record, hypothesis, result),
+                remediation="Remove sensitive fields from API responses. Only return data needed for the client. Never expose: SSN, credit cards, tokens, API keys, private keys.",
+                reproduction_curl=build_curl_command(hypothesis),
+            )
+        )
+
+    # Legacy sensitive leakage detection (kept for compatibility)
     secret_findings = detect_sensitive_leakage(record, hypothesis, result)
     findings.extend(secret_findings)
+
     return findings
 
 
