@@ -7,7 +7,7 @@ import traceback
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .config import validate_langsmith_env
+from .config import validate_langsmith_env, validate_run_config
 from .context import build_endpoint_context
 from .evaluation import evaluate_result
 from .executor import Transport, execute_hypothesis, should_fire
@@ -71,6 +71,13 @@ def run_scan(
     run: Optional[RunRecord] = None,
 ) -> RunRecord:
     validate_langsmith_env()
+
+    # Validate config before running
+    config_errors = validate_run_config(config)
+    if config_errors:
+        error_msg = "Configuration validation failed:\n" + "\n".join("  - " + e for e in config_errors)
+        raise ValueError(error_msg)
+
     store = store or RunStore(config.database_path)
     run = run or store.create_run(config)
     config.run_artifact_dir = run.artifact_dir

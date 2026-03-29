@@ -136,4 +136,61 @@ def validate_langsmith_env() -> None:
         )
 
 
+def validate_run_config(config: RunConfig) -> List[str]:
+    """
+    Validate configuration before running scan.
+    Returns list of error messages (empty if valid).
+    """
+    errors = []
+
+    # HAR file validation
+    har_path = Path(config.har_path)
+    if not har_path.exists():
+        errors.append("HAR file not found: %s" % config.har_path)
+    elif not config.har_path.endswith('.har'):
+        errors.append("Expected .har file, got: %s" % config.har_path)
+
+    # Domain validation
+    if not config.target_domains:
+        errors.append("No target domains specified")
+
+    # Parameter validation
+    if config.per_endpoint_hypothesis_cap <= 0:
+        errors.append("per_endpoint_hypothesis_cap must be > 0")
+    elif config.per_endpoint_hypothesis_cap > 100:
+        errors.append("WARNING: per_endpoint_hypothesis_cap is very high (>100), may use excessive quota")
+
+    if config.global_request_cap <= 0:
+        errors.append("global_request_cap must be > 0")
+    elif config.global_request_cap > 1000:
+        errors.append("WARNING: global_request_cap is very high (>1000), may use excessive quota")
+
+    if config.inter_request_delay_ms < 0:
+        errors.append("inter_request_delay_ms cannot be negative")
+    elif config.inter_request_delay_ms < 100:
+        errors.append("WARNING: inter_request_delay_ms is very low (<100ms), may trigger rate limits")
+
+    # LLM validation
+    if config.provider != "builtin":
+        if not config.llm_api_key:
+            errors.append("API key required for provider '%s'" % config.provider)
+        if not config.model:
+            errors.append("Model must be specified for external LLM")
+
+    # Timeout validation
+    if config.llm_timeout_seconds <= 0:
+        errors.append("llm_timeout_seconds must be > 0")
+    if config.request_timeout_seconds <= 0:
+        errors.append("request_timeout_seconds must be > 0")
+
+    # Artifact directory validation
+    artifact_path = Path(config.artifact_dir)
+    try:
+        artifact_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        errors.append("Cannot create artifact directory: %s" % e)
+
+    return errors
+
+
 autoload_env()
