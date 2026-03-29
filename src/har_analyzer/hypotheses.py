@@ -282,49 +282,62 @@ def _build_prompt_context(record: RequestRecord, context: EndpointContext) -> Di
 
 def _sanitize_header_value(value: str, max_length: int = 200) -> str:
     """
-    Sanitize header value for safe LLM consumption.
-    - Truncate long values (tokens, etc.)
-    - Redact sensitive patterns
+    Sanitize header value for LLM consumption.
+    Goal: Show LLM the PATTERN/TYPE of auth data, but hide the actual SECRET.
+
+    Examples:
+    - "Bearer eyJhbGc..." → "Bearer [JWT:eyJhbGc...]" (LLM sees it's JWT)
+    - "sk_live_abc123..." → "sk_live_[APIKEY_HIDDEN]" (LLM sees it's sk_ key)
+    - "Basic dXNlcjpwYXNz..." → "Basic [BASE64_HIDDEN]" (LLM sees it's Basic auth)
     """
     if not value:
         return ""
 
-    # Redact common secret patterns before sending to LLM
     redacted = value
 
-    # JWT tokens (Bearer eyJ... or just eyJ...)
+    # JWT tokens: keep "Bearer" prefix so LLM knows it's a JWT
     if "eyJ" in redacted and len(redacted) > 50:
-        redacted = "[JWT_TOKEN_REDACTED]"
+        # Extract prefix (e.g., "Bearer ", "JWT ", etc.) if present
+        parts = redacted.split(" ", 1)
+        if len(parts) == 2 and len(parts[0]) < 20:
+            prefix = parts[0]  # "Bearer", "JWT", etc.
+            token = parts[1]
+            # Show first few chars of token so LLM knows it's JWT
+            redacted = f"{prefix} [JWT:{token[:20]}...]"
+        else:
+            redacted = f"[JWT:{redacted[:20]}...]"
 
-    # API keys (long alphanumeric strings, common prefixes)
-    elif (len(redacted) > 32 and
-          redacted.replace("-", "").replace("_", "").isalnum() and
-          any(redacted.startswith(prefix) for prefix in ["sk_", "pk_", "api_", "token_"])):
-        redacted = "[APIKEY_REDACTED]"
+    # API keys with common prefixes: keep the prefix so LLM knows the key type
+    elif any(redacted.startswith(prefix) for prefix in ["sk_", "pk_", "api_", "token_"]):
+        prefix_end = redacted.find("_", 3) + 1 if "_" in redacted[3:] else 4
+        prefix = redacted[:prefix_end]
+        redacted = f"{prefix}[KEY_HIDDEN]"
 
-    # Truncate if still too long
-    if len(redacted) > max_length:
-        redacted = redacted[:max_length] + "..."
+    # Basic auth: keep "Basic" prefix, hide base64 payload
+    elif redacted.startswith("Basic "):
+        redacted = "Basic [BASE64_PAYLOAD_HIDDEN]"
+
+    # Generic long strings: show structure without exposing value
+    elif len(redacted) > max_length:
+        if len(redacted) > 100:
+            redacted = f"[STRING:{redacted[:10]}...{redacted[-10:]}]"
+        else:
+            redacted = redacted[:max_length] + "..."
 
     return redacted
 
 
 def _build_prompt_request(record: RequestRecord, config: RunConfig) -> Dict[str, Any]:
-    # Sanitize headers before sending to LLM (redact auth tokens, API keys, etc.)
+    # Sanitize headers before sending to LLM
+    # Goal: Show LLM the AUTH PATTERN but hide the actual SECRET
+    # E.g., "Bearer [JWT:eyJhbGc...]" instead of full token
     sanitized_headers = {}
     for key, value in record.request_headers.items():
-        if key.lower() in ("authorization", "x-api-key", "x-auth-token", "cookie"):
-            # Redact sensitive auth headers
-            sanitized_headers[key] = "[REDACTED_AUTH_HEADER]"
-        else:
-            sanitized_headers[key] = _sanitize_header_value(value)
+        sanitized_headers[key] = _sanitize_header_value(value)
 
-    response_headers = {}
+    sanitized_response_headers = {}
     for key, value in record.response_headers.items():
-        if key.lower() in ("authorization", "set-cookie", "x-token"):
-            response_headers[key] = "[REDACTED_HEADER]"
-        else:
-            response_headers[key] = _sanitize_header_value(value)
+        sanitized_response_headers[key] = _sanitize_header_value(value)
 
     return {
         "method": record.method,
@@ -336,7 +349,7 @@ def _build_prompt_request(record: RequestRecord, config: RunConfig) -> Dict[str,
         "request_headers": sanitized_headers,
         "request_body": _build_prompt_body(record.request_body, config),
         "response_status": record.response_status,
-        "response_headers": response_headers,
+        "response_headers": sanitized_response_headers,
         "response_body": _build_prompt_body(record.response_body, config),
     }
 
