@@ -8,7 +8,16 @@ It uses an LLM to figure out what's worth testing on each endpoint (IDOR, auth b
 
 ## Screenshots
 
-> Coming soon
+## Screenshots
+
+### Dashboard
+![Dashboard](docs/screenshots/Dashboard.png)
+
+### Vulnerability Findings
+| IDOR | NoSQL Injection | SSRF |
+|:---:|:---:|:---:|
+| ![IDOR](docs/screenshots/IDOR.png) | ![NoSQL](docs/screenshots/NoSQL.png) | ![SSRF](docs/screenshots/SSRF.png) |
+
 
 ## How it works
 
