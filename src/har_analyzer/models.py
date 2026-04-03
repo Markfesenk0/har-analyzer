@@ -16,12 +16,20 @@ def _serialize(value: Any) -> Any:
 
 
 @dataclass
+class TokenInjectionRule:
+    """Rule for injecting/refreshing tokens before testing."""
+    header_name: str  # e.g., "Authorization"
+    token_value: str  # The fresh token to inject
+    applies_to_endpoints: List[str] = field(default_factory=list)  # Empty = all endpoints
+
+
+@dataclass
 class RunConfig:
     har_path: str
     target_domains: List[str]
     provider: str = "builtin"
     model: str = "builtin-heuristics"
-    langsmith_project: str = "har-analyzer"
+    validation_model: str = ""  # Separate model for finding validation. Falls back to model if empty.
     concurrency: int = 4
     per_endpoint_hypothesis_cap: int = 10
     global_request_cap: int = 100
@@ -43,7 +51,9 @@ class RunConfig:
     neighbor_context_window: int = 2
     run_artifact_dir: str = ""
     step_mode: bool = False
+    hypotheses_only: bool = False
     redact_by_default: bool = False
+    token_injection_rules: List[TokenInjectionRule] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return _serialize(self)
@@ -94,6 +104,7 @@ class EndpointContext:
     neighboring_requests: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
     endpoint_groups: Dict[str, List[str]] = field(default_factory=dict)
     api_summary: str = ""
+    data_flows: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return _serialize(self)
@@ -142,6 +153,7 @@ class ExecutionResult:
     body_size_delta: int = 0
     outcome: str = "not_run"
     error: Optional[str] = None
+    discovered_tokens: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return _serialize(self)
@@ -251,6 +263,7 @@ class HypothesisRunItem:
     response_headers_json: str = "{}"
     response_body: str = ""
     findings_count: int = 0
+    llm_validation_json: str = ""
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
 
     def to_dict(self) -> Dict[str, Any]:

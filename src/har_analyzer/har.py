@@ -114,6 +114,7 @@ def har_to_records(har_path: str) -> List[RequestRecord]:
 def filter_records(records: Iterable[RequestRecord], target_domains: Iterable[str], excluded_patterns: Iterable[str]) -> List[RequestRecord]:
     targets = [domain.lower() for domain in target_domains if domain]
     excluded = [pattern for pattern in excluded_patterns if pattern]
+    seen_endpoints: set[tuple[str, str]] = set()
     filtered = []
     for record in records:
         if targets and not _host_in_scope(record.host, targets):
@@ -122,6 +123,10 @@ def filter_records(records: Iterable[RequestRecord], target_domains: Iterable[st
             continue
         if "static_asset" in record.flags or "tracking_domain" in record.flags or "preflight_request" in record.flags:
             continue
+        endpoint_key = (record.method, record.path)
+        if endpoint_key in seen_endpoints:
+            continue
+        seen_endpoints.add(endpoint_key)
         filtered.append(record)
     return filtered
 

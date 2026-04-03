@@ -156,7 +156,7 @@ class HypothesisParsingTests(unittest.TestCase):
             har_path="fixture.har",
             target_domains=["api.example.com"],
             provider="deepinfra",
-            model="zai-org/GLM-5",
+            model="Qwen/Qwen3.5-122B-A10B",
             llm_timeout_seconds=60,
             llm_busy_retry_count=2,
             llm_busy_retry_base_delay_seconds=0.01,

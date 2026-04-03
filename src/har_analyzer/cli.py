@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from .config import load_run_config, validate_langsmith_env
+from .config import load_run_config
 from .graph import run_scan
 from .har import export_filtered_records, save_sanitized_har
 from .web import serve
@@ -93,7 +93,6 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "serve":
-        validate_langsmith_env()
         return serve(args.host, args.port, args.artifact_dir)
 
     parser.print_help()

@@ -1,503 +1,1194 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ run.run_id if run else "Run" }} - HAR Analyzer</title>
+{% extends "_base.html" %}
+{% set current_page = "runs" %}
+
+{% block title %}Run Detail - {{ run.har_path | basename }} - HAR Analyzer{% endblock %}
+
+{% block extra_head %}
     <style>
-      :root {
-        --bg: #f3eee7;
-        --surface: rgba(255, 251, 246, 0.9);
-        --surface-strong: #fffaf3;
-        --border: rgba(90, 66, 46, 0.14);
-        --text: #1f1812;
-        --muted: #6d5d4f;
-        --brand: #165a57;
-        --brand-strong: #0f4442;
-        --danger: #a64b3a;
-        --warning: #b77222;
-        --shadow: 0 22px 60px rgba(61, 44, 28, 0.12);
-        --radius-xl: 28px;
-        --radius-lg: 18px;
-        --radius-md: 12px;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        color: var(--text);
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(22, 90, 87, 0.18), transparent 26rem),
-          radial-gradient(circle at top right, rgba(183, 114, 34, 0.16), transparent 22rem),
-          linear-gradient(180deg, var(--bg), #faf6f0 55%, #f5efe8);
-      }
-      .page {
-        width: min(1280px, calc(100% - 2rem));
-        margin: 1.5rem auto 2.6rem;
-      }
-      a {
-        color: inherit;
-        text-decoration: none;
-      }
-      .back-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        margin-bottom: 1rem;
-        color: var(--muted);
-        font-weight: 700;
-      }
-      .hero, .panel {
-        background: var(--surface);
-        backdrop-filter: blur(18px);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-xl);
-        box-shadow: var(--shadow);
-      }
-      .hero {
-        padding: 1.5rem;
-        margin-bottom: 1.2rem;
-      }
-      .hero-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: flex-start;
-      }
-      h1, h2, h3 {
-        margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", serif;
-      }
-      h1 {
-        font-size: clamp(2rem, 3vw, 3.2rem);
-        line-height: 1;
-        letter-spacing: -0.03em;
-      }
-      .subtitle {
-        margin-top: 0.65rem;
-        color: var(--muted);
-        max-width: 54rem;
-      }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.42rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(22, 90, 87, 0.1);
-        color: var(--brand-strong);
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-      }
-      .hero-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.7rem;
-        margin-top: 1.15rem;
-      }
-      .meta-chip {
-        padding: 0.65rem 0.8rem;
-        border-radius: var(--radius-md);
-        border: 1px solid rgba(90, 66, 46, 0.11);
-        background: rgba(255, 255, 255, 0.64);
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.9rem;
-        margin-top: 1.3rem;
-      }
-      .stat {
-        padding: 1rem;
-        border-radius: var(--radius-lg);
-        background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.6));
-        border: 1px solid rgba(90, 66, 46, 0.12);
-      }
-      .stat .label {
-        color: var(--muted);
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .stat .value {
-        margin-top: 0.35rem;
-        font-size: 1.7rem;
-        font-weight: 700;
-      }
-      .stat .sub {
-        margin-top: 0.28rem;
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        margin-top: 1.3rem;
-      }
-      .toolbar form { margin: 0; }
-      .button {
-        appearance: none;
-        border: none;
-        cursor: pointer;
-        border-radius: 999px;
-        padding: 0.84rem 1.15rem;
-        font: inherit;
-        font-weight: 700;
-      }
-      .button-primary {
-        color: white;
-        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
-        box-shadow: 0 14px 30px rgba(22, 90, 87, 0.24);
-      }
-      .button-neutral {
-        color: var(--text);
-        background: rgba(255,255,255,0.78);
-        border: 1px solid rgba(90, 66, 46, 0.16);
-      }
-      .button-danger {
-        color: white;
-        background: linear-gradient(135deg, var(--danger), #8b392d);
-      }
-      .layout {
-        display: grid;
-        grid-template-columns: 1.3fr 0.9fr;
-        gap: 1.2rem;
-      }
-      .panel {
-        padding: 1.35rem;
-      }
-      .panel-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: center;
-        margin-bottom: 0.9rem;
-      }
-      .panel-header p {
-        margin: 0.35rem 0 0;
-        color: var(--muted);
-      }
-      .table-wrap {
-        overflow-x: auto;
-        border-radius: var(--radius-lg);
-        border: 1px solid rgba(90, 66, 46, 0.1);
-        background: rgba(255,255,255,0.5);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th, td {
-        padding: 0.9rem 0.8rem;
-        text-align: left;
-        border-bottom: 1px solid rgba(90, 66, 46, 0.08);
-        vertical-align: top;
-      }
-      th {
-        color: var(--muted);
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        background: rgba(255,255,255,0.74);
-      }
-      .endpoint-link {
-        font-weight: 700;
-      }
-      .muted {
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-      .finding-card {
-        padding: 1rem;
-        border-radius: var(--radius-lg);
-        border: 1px solid rgba(90, 66, 46, 0.1);
-        background: rgba(255,255,255,0.56);
-      }
-      .finding-card + .finding-card {
-        margin-top: 0.9rem;
-      }
-      pre {
-        margin: 0.8rem 0 0;
-        padding: 0.95rem;
-        border-radius: var(--radius-md);
-        background: #f6efe7;
-        overflow-x: auto;
-        white-space: pre-wrap;
-        border: 1px solid rgba(90, 66, 46, 0.08);
-      }
-      .empty {
-        color: var(--muted);
-        padding: 0.4rem 0;
-      }
-      @media (max-width: 1024px) {
-        .layout, .stats {
-          grid-template-columns: 1fr;
+        @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .animate-pulse-slow { animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes progress { 0% { width: 0%; } 100% { width: 100%; } }
+        .progress-bar-animated { animation: progress 30s linear infinite; }
+
+        /* Timeline styling */
+        .timeline-dot {
+            width: 14px; height: 14px; border-radius: 50%; position: relative; z-index: 2;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.3s ease;
         }
-        .hero-top {
-          flex-direction: column;
+        .timeline-line {
+            width: 2px; position: absolute; left: 6px; top: 14px;
+            transition: height 0.5s ease, background 0.3s ease;
         }
-      }
-      @media (max-width: 720px) {
-        .page {
-          width: min(100% - 1rem, 1280px);
-          margin: 1rem auto 2rem;
+        /* Line only extends to next completed/active item - default hidden, JS sets height */
+        .timeline-line-done { background: linear-gradient(to bottom, #2d8a3a, #2d8a3a); }
+        .timeline-line-active { background: linear-gradient(to bottom, #d97706 50%, #cbd5e1 50%);
+            background-size: 100% 8px; animation: timeline-march 0.6s linear infinite; }
+        .timeline-line-pending { background: #e2e8f0; }
+
+        @keyframes timeline-march {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 8px; }
         }
-        .hero, .panel {
-          padding: 1.05rem;
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .timeline-spin { animation: spin 1s linear infinite; }
+        @keyframes dot-ripple {
+            0% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4); }
+            100% { box-shadow: 0 0 0 8px rgba(217, 119, 6, 0); }
         }
-      }
+        .timeline-dot-active { animation: dot-ripple 1.5s ease-out infinite; }
+
+        /* Sub-steps for hypotheses */
+        .timeline-substep { position: relative; padding-left: 24px; margin-left: 6px; border-left: 2px dashed #e2e8f0; }
+        .timeline-substep-dot { width: 8px; height: 8px; border-radius: 50%; position: absolute; left: -5px; top: 6px; }
+
+        .severity-critical { background: #a64b3a; color: white; }
+        .severity-high { background: #d97706; color: white; }
+        .severity-medium { background: #d97706; color: white; }
+        .severity-low { background: #2d8a3a; color: white; }
+        .severity-info { background: #165a57; color: white; }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     </style>
-  </head>
-  <body>
-    <div class="page">
-      <a class="back-link" href="/">Back to runs</a>
-      {% if run %}
-      <section class="hero">
-        <div class="hero-top">
-          <div>
-            <span class="pill" id="run-status">{{ run.status }}</span>
-            <h1>{{ run.run_id }}</h1>
-            <p class="subtitle" id="run-current-endpoint">Current endpoint: {{ run.current_endpoint or "idle" }}</p>
-          </div>
-          <div class="meta-chip" id="run-last-error">Last error: {{ run.last_error or "none" }}</div>
-        </div>
+{% endblock %}
 
-        <div class="hero-meta">
-          <div class="meta-chip">HAR: {{ run.har_path.split("/")[-1] if "/" in run.har_path else run.har_path }}</div>
-          <div class="meta-chip">Scope: {{ ", ".join(run.target_domains) }}</div>
-          {% if run.config %}
-          <div class="meta-chip">Provider: {{ run.config.provider }}</div>
-          <div class="meta-chip">Model: {{ run.config.model }}</div>
-          <div class="meta-chip">Step mode: {{ run.config.step_mode }}</div>
-          {% endif %}
-        </div>
+{% block breadcrumb %}
+    <a href="/" class="hover:text-primary transition-colors">Dashboard</a>
+    <i class="fa-solid fa-chevron-right text-xs mx-2"></i>
+    <a href="/reports" class="hover:text-primary transition-colors">Recent Runs</a>
+    <i class="fa-solid fa-chevron-right text-xs mx-2"></i>
+    <span class="text-text font-medium">{{ run.har_path | basename }}</span>
+{% endblock %}
 
-        <div class="stats">
-          <div class="stat">
-            <div class="label">Progress</div>
-            <div class="value" id="run-progress">{{ run.processed_requests }} / {{ run.total_requests }}</div>
-            <div class="sub">Processed scoped requests</div>
-          </div>
-          <div class="stat">
-            <div class="label">Findings</div>
-            <div class="value" id="run-findings">{{ run.findings_count }}</div>
-            <div class="sub">Confirmed issues so far</div>
-          </div>
-          <div class="stat">
-            <div class="label">Markdown</div>
-            <div class="value">{{ "ready" if run.report_markdown_path else "pending" }}</div>
-            <div class="sub">{{ run.report_markdown_path or "Waiting for final report" }}</div>
-          </div>
-          <div class="stat">
-            <div class="label">JSON</div>
-            <div class="value">{{ "ready" if run.report_json_path else "pending" }}</div>
-            <div class="sub">{{ run.report_json_path or "Waiting for final report" }}</div>
-          </div>
-        </div>
+{% block content %}
+    <div class="p-6 lg:p-8">
+        <div class="max-w-7xl mx-auto">
 
-        <div class="toolbar">
-          <form method="post" action="/runs/{{ run.run_id }}/pause">
-            <button class="button button-neutral" type="submit">Pause</button>
-          </form>
-          <form method="post" action="/runs/{{ run.run_id }}/resume">
-            <button class="button button-primary" type="submit">Resume</button>
-          </form>
-          <form method="post" action="/runs/{{ run.run_id }}/cancel">
-            <button class="button button-danger" type="submit">Cancel</button>
-          </form>
-        </div>
-      </section>
-      {% endif %}
+            <!-- Run Header -->
+            <div id="run-header" class="mb-6">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-3">
+                            <a href="/reports" class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-primary/5 hover:text-primary transition-colors">
+                                <i class="fa-solid fa-arrow-left"></i>
+                            </a>
+                            <h1 class="text-2xl font-bold text-primary-dark tracking-tight">{{ run.har_path | basename }}</h1>
+                            <span class="px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2
+                                {% if run.status == 'running' %}
+                                    bg-warning/10 text-warning border border-warning/20
+                                {% elif run.status == 'completed' %}
+                                    bg-success/10 text-success border border-success/20
+                                {% elif run.status == 'failed' %}
+                                    bg-danger/10 text-danger border border-danger/20
+                                {% elif run.status == 'paused' %}
+                                    bg-primary/10 text-primary border border-primary/20
+                                {% else %}
+                                    bg-muted/10 text-muted border border-muted/20
+                                {% endif %}
+                            ">
+                                {% if run.status == 'running' %}
+                                    <span class="w-2 h-2 rounded-full bg-warning animate-pulse"></span>
+                                    In Progress
+                                {% elif run.status == 'completed' %}
+                                    <span class="w-2 h-2 rounded-full bg-success"></span>
+                                    Completed
+                                {% elif run.status == 'failed' %}
+                                    <span class="w-2 h-2 rounded-full bg-danger"></span>
+                                    Failed
+                                {% elif run.status == 'paused' %}
+                                    <span class="w-2 h-2 rounded-full bg-primary"></span>
+                                    Paused
+                                {% endif %}
+                            </span>
+                        </div>
 
-      <section class="layout">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Filtered API Calls</h2>
-              <p>Each row represents one scoped request in the active run. Click through for the full prompt and replay trace.</p>
+                        <div class="flex items-center gap-4 ml-11 flex-wrap">
+                            <div class="flex items-center gap-2 text-sm">
+                                <i class="fa-solid fa-calendar text-muted"></i>
+                                <span class="text-muted">Started:</span>
+                                <span class="font-medium">{{ run.created_at[:16].replace('T', ' ') if run.created_at else 'N/A' }}</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-sm">
+                                <i class="fa-solid fa-clock text-muted"></i>
+                                <span class="text-muted">Elapsed:</span>
+                                <span class="font-medium text-primary" data-elapsed>{{ elapsed_seconds // 60 }}m {{ elapsed_seconds % 60 }}s</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-sm">
+                                <i class="fa-solid fa-server text-muted"></i>
+                                <span class="text-muted">Target:</span>
+                                {% for domain in run.target_domains %}
+                                    <span class="px-2 py-0.5 rounded text-xs font-mono bg-primary/10 text-primary">{{ domain }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        {% if run.status == 'awaiting_approval' %}
+                            <button onclick="approveAllPending(this)" class="px-4 py-2 rounded-lg bg-success text-white hover:bg-success/90 transition-colors text-sm font-medium flex items-center gap-2 animate-pulse-slow" id="approve-all-btn">
+                                <i class="fa-solid fa-check"></i>
+                                Approve & Continue
+                            </button>
+                        {% endif %}
+                        {% if run.status == 'running' %}
+                            <form method="POST" action="/runs/{{ run.run_id }}/pause" style="display: inline;">
+                                <button type="submit" class="px-4 py-2 rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors text-sm font-medium flex items-center gap-2">
+                                    <i class="fa-solid fa-pause"></i>
+                                    Pause
+                                </button>
+                            </form>
+                        {% endif %}
+                        <button onclick="showLogs()" class="px-4 py-2 rounded-lg border border-muted/20 text-muted hover:bg-surface transition-colors text-sm font-medium flex items-center gap-2">
+                            <i class="fa-solid fa-file-lines"></i>
+                            View Logs
+                        </button>
+                        {% if run.status in ('running', 'paused') %}
+                            <form method="POST" action="/runs/{{ run.run_id }}/cancel" style="display: inline;">
+                                <button type="submit" class="px-4 py-2 rounded-lg bg-danger/10 border border-danger/20 text-danger hover:bg-danger/20 transition-colors text-sm font-medium flex items-center gap-2">
+                                    <i class="fa-solid fa-stop"></i>
+                                    Cancel Scan
+                                </button>
+                            </form>
+                        {% endif %}
+                        <button onclick="confirmDelete('{{ run.run_id }}')" class="px-4 py-2 rounded-lg border border-muted/20 text-muted hover:bg-surface hover:text-danger transition-colors text-sm font-medium flex items-center gap-2">
+                            <i class="fa-solid fa-trash-can"></i>
+                            Delete
+                        </button>
+                    </div>
+                </div>
             </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Endpoint</th>
-                  <th>Status</th>
-                  <th>Stage</th>
-                  <th>Hypotheses</th>
-                  <th>Executed</th>
-                  <th>Findings</th>
-                  <th>Summary</th>
-                  <th>Debug</th>
-                </tr>
-              </thead>
-              <tbody id="request-items-body">
-                {% for item in request_items %}
-                <tr>
-                  <td>{{ item.entry_index }}</td>
-                  <td>
-                    <a class="endpoint-link" href="/runs/{{ run.run_id }}/requests/{{ item.request_id }}">{{ item.method }} {{ item.path }}</a>
-                    <div class="muted">{{ item.host }}</div>
-                  </td>
-                  <td><span class="pill">{{ item.status }}</span></td>
-                  <td>{{ item.stage }}</td>
-                  <td>{{ item.hypothesis_count }}</td>
-                  <td>{{ item.executed_count }}</td>
-                  <td>{{ item.findings_count }}</td>
-                  <td>
-                    {{ item.summary or "Pending" }}
-                    {% if item.approval_state and item.approval_state != "not_required" %}
-                    <div class="muted">Approval: {{ item.approval_state }}</div>
-                    {% endif %}
-                    {% if item.error %}
-                    <div class="muted">{{ item.error }}</div>
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if item.debug_artifact_path %}
-                    <a href="/runs/{{ run.run_id }}/debug/{{ item.request_id }}">Raw LLM response</a>
-                    {% else %}
-                    <span class="muted">None</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% else %}
-                <tr>
-                  <td colspan="9" class="empty">No filtered API calls stored yet.</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+
+            <!-- Error Banner -->
+            {% if run.status == 'failed' and run.last_error %}
+            <div class="mb-6 p-4 rounded-xl bg-danger/5 border border-danger/20" id="error-banner">
+                <div class="flex items-start gap-3">
+                    <i class="fa-solid fa-circle-exclamation text-danger text-xl mt-0.5"></i>
+                    <div class="flex-1">
+                        <p class="font-semibold text-danger mb-1">Scan Failed</p>
+                        <p class="text-sm text-text">{{ run.last_error }}</p>
+                        <p class="text-xs text-muted mt-2">Processed {{ run.processed_requests }} of {{ run.total_requests }} requests before failure. Check the request detail pages for per-request errors.</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Progress Overview -->
+            <div id="progress-overview" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-text flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line text-primary"></i>
+                        Scan Progress
+                    </h3>
+                    <span class="text-2xl font-bold text-primary" data-progress-text>
+                        {% if run.total_requests > 0 %}
+                            {{ (run.processed_requests / run.total_requests * 100) | round | int }}%
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </span>
+                </div>
+
+                <div class="mb-6">
+                    <div class="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-500"
+                             data-progress-bar
+                             style="width: {% if run.total_requests > 0 %}{{ (run.processed_requests / run.total_requests * 100) | round | int }}{% else %}0{% endif %}%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs text-muted mt-2">
+                        <span data-request-count>{{ run.processed_requests }}</span> / {{ run.total_requests }} requests processed
+                        <span>~{{ estimated_remaining_time }} remaining</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-muted uppercase">Requests</span>
+                            <i class="fa-solid fa-network-wired text-primary"></i>
+                        </div>
+                        <div class="text-2xl font-bold text-primary-dark mb-1" data-request-count>{{ run.processed_requests }}</div>
+                        <div class="text-xs text-muted">of {{ run.total_requests }} processed</div>
+                    </div>
+
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-muted uppercase">Hypotheses</span>
+                            <i class="fa-solid fa-lightbulb text-warning"></i>
+                        </div>
+                        <div class="text-2xl font-bold text-primary-dark mb-1" data-hypothesis-count>{{ hypothesis_items | length }}</div>
+                        <div class="text-xs text-muted">generated & tested</div>
+                    </div>
+
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-muted uppercase">Findings</span>
+                            <i class="fa-solid fa-bug text-danger"></i>
+                        </div>
+                        <div class="text-2xl font-bold text-primary-dark mb-1" data-findings-count>{{ findings | length }}</div>
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="px-1.5 py-0.5 rounded severity-critical text-[10px] font-medium" data-severity-critical>
+                                {{ (findings | selectattr('severity', 'equalto', 'critical') | list | length) }}
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded severity-high text-[10px] font-medium" data-severity-high>
+                                {{ (findings | selectattr('severity', 'equalto', 'high') | list | length) }}
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded severity-medium text-[10px] font-medium" data-severity-medium>
+                                {{ (findings | selectattr('severity', 'equalto', 'medium') | list | length) }}
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded severity-low text-[10px] font-medium" data-severity-low>
+                                {{ (findings | selectattr('severity', 'equalto', 'low') | list | length) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-muted uppercase">False Positives</span>
+                            <i class="fa-solid fa-filter text-muted"></i>
+                        </div>
+                        <div class="text-2xl font-bold text-primary-dark mb-1" data-false-positives>
+                            {% set fp_count = (hypothesis_items | selectattr('stage', 'equalto', 'false_positive') | list | length) %}
+                            {{ fp_count }}
+                        </div>
+                        <div class="text-xs text-muted">filtered by LLM</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two Column Layout -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Left Column - Timeline & Findings -->
+                <div class="lg:col-span-2 space-y-6">
+
+                    <!-- Scan Timeline -->
+                    <div id="scan-timeline" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6">
+                        <h3 class="font-semibold text-text mb-6 flex items-center gap-2">
+                            <i class="fa-solid fa-timeline text-primary"></i>
+                            Scan Timeline
+                        </h3>
+
+                        <!-- Timeline content rendered by JS from page-data -->
+                        <div class="space-y-6">
+                            <div class="p-4 text-center text-muted">
+                                <i class="fa-solid fa-spinner fa-spin text-lg mb-2"></i>
+                                <p class="text-xs">Loading timeline...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Hypotheses & Findings -->
+                    <div id="recent-findings" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-semibold text-text flex items-center gap-2">
+                                <i class="fa-solid fa-list-ul text-primary"></i>
+                                Recent Hypotheses & Findings
+                            </h3>
+                            <div class="flex items-center gap-2" id="feed-filters">
+                                <button class="feed-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors" data-filter="all" onclick="setFeedFilter('all')">
+                                    All
+                                </button>
+                                <button class="feed-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:bg-surface transition-colors" data-filter="findings" onclick="setFeedFilter('findings')">
+                                    Findings Only
+                                </button>
+                                <button class="feed-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:bg-surface transition-colors" data-filter="hypotheses" onclick="setFeedFilter('hypotheses')">
+                                    Hypotheses Only
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Feed content rendered by JS from page-data -->
+                        <div class="space-y-3 max-h-[600px] overflow-y-auto" id="activity-feed">
+                            <div class="p-8 text-center text-muted">
+                                <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 block opacity-50"></i>
+                                <p class="text-sm">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Right Column - Live Stats & Controls -->
+                <div class="lg:col-span-1">
+                    <div class="sticky top-24 space-y-6">
+
+                        <!-- Live Performance Stats -->
+                        <div id="performance-stats" class="bg-gradient-to-br from-primary to-primary-dark rounded-xl shadow-lg p-6 text-white">
+                            <h3 class="font-semibold text-lg mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-gauge-high"></i>
+                                Live Performance
+                            </h3>
+
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-1">Processed</div>
+                                        <div class="text-lg font-bold" data-perf-processed>{{ run.processed_requests }}/{{ run.total_requests }}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-1">Hypotheses</div>
+                                        <div class="text-lg font-bold" data-perf-hypotheses>{{ hypothesis_items | length }}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-1">Findings</div>
+                                        <div class="text-lg font-bold" data-perf-findings>{{ findings | length }}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-1">Error Rate</div>
+                                        <div class="text-lg font-bold" data-perf-error-rate>0%</div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-3 mt-3 border-t border-white/20 space-y-2">
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-0.5">Current</div>
+                                        <div class="font-medium text-xs truncate" data-current-endpoint>{{ run.current_endpoint or 'Idle' }}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-white/60 text-xs mb-0.5">Status</div>
+                                        <div class="font-medium text-sm" data-run-status>{{ run.status }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Findings Summary -->
+                        <div id="findings-summary" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6">
+                            <h3 class="font-semibold text-text mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-bug text-danger"></i>
+                                Findings by Severity
+                            </h3>
+
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-danger/5 border border-danger/20">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-3 h-3 rounded-full bg-danger"></div>
+                                        <span class="text-sm font-medium text-text">Critical</span>
+                                    </div>
+                                    <span class="text-xl font-bold text-danger" data-severity-critical>
+                                        {{ (findings | selectattr('severity', 'equalto', 'critical') | list | length) }}
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-3 h-3 rounded-full bg-warning"></div>
+                                        <span class="text-sm font-medium text-text">High</span>
+                                    </div>
+                                    <span class="text-xl font-bold text-warning" data-severity-high>
+                                        {{ (findings | selectattr('severity', 'equalto', 'high') | list | length) }}
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-3 h-3 rounded-full bg-warning"></div>
+                                        <span class="text-sm font-medium text-text">Medium</span>
+                                    </div>
+                                    <span class="text-xl font-bold text-warning" data-severity-medium>
+                                        {{ (findings | selectattr('severity', 'equalto', 'medium') | list | length) }}
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-success/5 border border-success/20">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-3 h-3 rounded-full bg-success"></div>
+                                        <span class="text-sm font-medium text-text">Low</span>
+                                    </div>
+                                    <span class="text-xl font-bold text-success" data-severity-low>
+                                        {{ (findings | selectattr('severity', 'equalto', 'low') | list | length) }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 pt-4 border-t border-primary/10">
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="font-medium text-text">Total Findings</span>
+                                    <span class="text-2xl font-bold text-primary-dark" data-findings-count>{{ findings | length }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scan Configuration -->
+                        <div id="scan-config" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6">
+                            <h3 class="font-semibold text-text mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-sliders text-primary"></i>
+                                Configuration
+                            </h3>
+
+                            <div class="space-y-3 text-sm">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Mode:</span>
+                                    {% if run.config.get('step_mode', False) %}
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning">Manual</span>
+                                    {% else %}
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">Automated</span>
+                                    {% endif %}
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Hypothesis Model:</span>
+                                    <span class="font-medium text-text text-xs">{{ run.config.get('model', 'builtin') | replace('/', '/ ') }}</span>
+                                </div>
+                                {% if run.config.get('validation_model') %}
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Validation Model:</span>
+                                    <span class="font-medium text-text text-xs">{{ run.config.get('validation_model') | replace('/', '/ ') }}</span>
+                                </div>
+                                {% endif %}
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Concurrency:</span>
+                                    <span class="font-medium text-text">{{ run.config.get('concurrency', 1) }}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Request Delay:</span>
+                                    <span class="font-medium text-text">{{ run.config.get('inter_request_delay_ms', 500) }}ms</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">Max Endpoints:</span>
+                                    <span class="font-medium text-text">{{ run.total_requests }}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-muted">PII Redaction:</span>
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">Enabled</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div id="quick-actions" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6">
+                            <h3 class="font-semibold text-text mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-bolt text-accent"></i>
+                                Quick Actions
+                            </h3>
+
+                            <div class="space-y-2">
+                                <button class="w-full px-4 py-2.5 rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors text-sm font-medium flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-download"></i>
+                                    Export Current Findings
+                                </button>
+                                <button class="w-full px-4 py-2.5 rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors text-sm font-medium flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-share-nodes"></i>
+                                    Share Progress Link
+                                </button>
+                                <button class="w-full px-4 py-2.5 rounded-lg border border-muted/20 text-muted hover:bg-surface transition-colors text-sm font-medium flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-bell"></i>
+                                    Configure Alerts
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
         </div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Findings</h2>
-              <p>Confirmed observations from executed hypotheses.</p>
-            </div>
-          </div>
-          <div id="findings-list">
-            {% for finding in findings %}
-            <article class="finding-card">
-              <span class="pill">{{ finding.severity }}</span>
-              <h3 style="margin-top:0.65rem;">{{ finding.title }}</h3>
-              <p class="muted" style="margin-top:0.45rem;">{{ finding.summary }}</p>
-              <pre>{{ finding.evidence | tojson(indent=2) }}</pre>
-            </article>
-            {% else %}
-            <div class="empty">No findings stored for this run yet.</div>
-            {% endfor %}
-          </div>
-        </div>
-      </section>
+        <!-- Footer -->
+        <footer id="footer" class="mt-12 py-6 border-t border-primary/10 text-center text-sm text-muted">
+            <p>&copy; HAR Analyzer. Security Testing Platform.</p>
+        </footer>
     </div>
 
-    {% if run %}
-    <script>
-      const runId = "{{ run.run_id }}";
-      let pollTimer = null;
-      let pollInFlight = false;
-      function escapeHtml(value) {
-        return String(value ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#39;");
-      }
-      function renderFindings(findings) {
-        const container = document.getElementById("findings-list");
-        if (!findings.length) {
-          container.innerHTML = '<div class="empty">No findings stored for this run yet.</div>';
-          return;
-        }
-        container.innerHTML = findings.map(finding => `
-          <article class="finding-card">
-            <span class="pill">${escapeHtml(finding.severity || "unknown")}</span>
-            <h3 style="margin-top:0.65rem;">${escapeHtml(finding.title)}</h3>
-            <p class="muted" style="margin-top:0.45rem;">${escapeHtml(finding.summary)}</p>
-            <pre>${escapeHtml(JSON.stringify(finding.evidence || [], null, 2))}</pre>
-          </article>
-        `).join("");
-      }
-      function renderRequestItems(items) {
-        const body = document.getElementById("request-items-body");
-        if (!items.length) {
-          body.innerHTML = '<tr><td colspan="9" class="empty">No filtered API calls stored yet.</td></tr>';
-          return;
-        }
-        body.innerHTML = items.map(item => `
-          <tr>
-            <td>${escapeHtml(item.entry_index)}</td>
-            <td>
-              <a class="endpoint-link" href="/runs/${encodeURIComponent(runId)}/requests/${encodeURIComponent(item.request_id)}">${escapeHtml(item.method)} ${escapeHtml(item.path)}</a>
-              <div class="muted">${escapeHtml(item.host)}</div>
-            </td>
-            <td><span class="pill">${escapeHtml(item.status)}</span></td>
-            <td>${escapeHtml(item.stage)}</td>
-            <td>${escapeHtml(item.hypothesis_count)}</td>
-            <td>${escapeHtml(item.executed_count)}</td>
-            <td>${escapeHtml(item.findings_count)}</td>
-            <td>${escapeHtml(item.summary || "Pending")}${item.approval_state && item.approval_state !== "not_required" ? `<div class="muted">Approval: ${escapeHtml(item.approval_state)}</div>` : ""}${item.error ? `<div class="muted">${escapeHtml(item.error)}</div>` : ""}</td>
-            <td>${item.debug_artifact_path ? `<a href="/runs/${encodeURIComponent(runId)}/debug/${encodeURIComponent(item.request_id)}">Raw LLM response</a>` : '<span class="muted">None</span>'}</td>
-          </tr>
-        `).join("");
-      }
-      function schedulePoll(delayMs) {
-        if (pollTimer) {
-          window.clearTimeout(pollTimer);
-        }
-        pollTimer = window.setTimeout(pollRun, delayMs);
-      }
-      async function pollRun() {
-        if (pollInFlight) {
-          return;
-        }
-        pollInFlight = true;
-        try {
-          const response = await fetch(`/runs/${encodeURIComponent(runId)}/snapshot`, { cache: "no-store" });
-          if (!response.ok) {
-            schedulePoll(3000);
-            return;
-          }
-          const data = await response.json();
-          if (!data.run) {
-            schedulePoll(3000);
-            return;
-          }
-          document.getElementById("run-status").textContent = data.run.status;
-          document.getElementById("run-progress").textContent = `${data.run.processed_requests} / ${data.run.total_requests}`;
-          document.getElementById("run-current-endpoint").textContent = `Current endpoint: ${data.run.current_endpoint || "idle"}`;
-          document.getElementById("run-last-error").textContent = `Last error: ${data.run.last_error || "none"}`;
-          document.getElementById("run-findings").textContent = data.run.findings_count;
-          renderRequestItems(data.request_items || []);
-          renderFindings(data.findings || []);
-          if (["running", "paused", "cancel_requested", "awaiting_approval"].includes(data.run.status)) {
-            schedulePoll(2000);
-          }
-        } catch (_error) {
-          schedulePoll(3000);
-        } finally {
-          pollInFlight = false;
-        }
-      }
-      window.addEventListener("focus", () => pollRun());
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-          pollRun();
-        }
-      });
-      if (["running", "paused", "cancel_requested", "awaiting_approval"].includes("{{ run.status }}")) {
-        pollRun();
-      }
+    <!-- Page-level data for polling JS -->
+    <script type="application/json" id="page-data">
+    {
+        "run_id": "{{ run.run_id }}",
+        "findings": {{ findings | tojson }},
+        "hypothesis_items": {{ hypothesis_items_slim | tojson }},
+        "request_items": {{ request_items_slim | tojson }},
+        "note_counts": {{ note_counts | tojson }}
+    }
     </script>
-    {% endif %}
-  </body>
-</html>
+
+    <script>
+        const RUN_SNAPSHOT_INTERVAL = 2000;
+        const RUN_ID = "{{ run.run_id }}";
+        let lastStatus = "{{ run.status }}";
+        let pollStartTime = Date.now();
+        let lastPollRequestCount = 0;
+        var _noteCounts = {{ note_counts | tojson | safe }};
+
+        // Note editor modal
+        function openNoteEditor(runId, requestId, hypothesisId) {
+            // Fetch existing notes for this context
+            var url = '/api/notes?run_id=' + runId;
+            if (requestId) url += '&request_id=' + requestId;
+            if (hypothesisId) url += '&hypothesis_id=' + hypothesisId;
+
+            fetch(url).then(function(r) { return r.json(); }).then(function(notes) {
+                var existing = notes.length > 0 ? notes[0] : null;
+                var modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6';
+                modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+                modal.innerHTML = '<div class="bg-white rounded-xl shadow-2xl max-w-lg w-full">' +
+                    '<div class="p-4 border-b border-primary/10 flex items-center justify-between">' +
+                    '<h3 class="font-semibold text-text text-sm"><i class="fa-solid fa-note-sticky mr-2 text-accent"></i>' + (existing ? 'Edit Note' : 'Add Note') + '</h3>' +
+                    '<button onclick="this.closest(\'.fixed\').remove()" class="text-muted hover:text-primary"><i class="fa-solid fa-xmark"></i></button>' +
+                    '</div>' +
+                    '<div class="p-4">' +
+                    '<textarea id="note-editor-content" class="w-full h-32 px-3 py-2 border border-primary/20 rounded-lg text-sm focus:outline-none focus:border-primary resize-none" placeholder="Add your notes here...">' + (existing ? existing.content : '') + '</textarea>' +
+                    '<div class="flex items-center justify-between mt-3">' +
+                    '<div>' + (existing ? '<button onclick="deleteNoteFromEditor(\'' + existing.note_id + '\')" class="text-xs text-danger hover:underline">Delete</button>' : '') + '</div>' +
+                    '<div class="flex gap-2">' +
+                    '<button onclick="this.closest(\'.fixed\').remove()" class="px-3 py-1.5 rounded-lg text-xs font-medium text-muted border border-primary/20 hover:bg-surface">Cancel</button>' +
+                    '<button onclick="saveNoteFromEditor(\'' + runId + '\', \'' + requestId + '\', \'' + hypothesisId + '\', \'' + (existing ? existing.note_id : '') + '\')" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-dark">Save</button>' +
+                    '</div></div></div></div>';
+                document.body.appendChild(modal);
+            });
+        }
+
+        function saveNoteFromEditor(runId, requestId, hypothesisId, existingNoteId) {
+            var content = document.getElementById('note-editor-content').value.trim();
+            if (!content) return;
+            fetch('/api/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note_id: existingNoteId || '', run_id: runId, request_id: requestId, hypothesis_id: hypothesisId, content: content }),
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    document.querySelector('.fixed')?.remove();
+                    // Update note count
+                    if (requestId) {
+                        _noteCounts[requestId] = (_noteCounts[requestId] || 0) + (existingNoteId ? 0 : 1);
+                    }
+                    // Re-render timeline to show updated note icons
+                    try {
+                        var pageData = JSON.parse(document.getElementById('page-data').textContent);
+                        var run = {{ run.to_dict() | tojson }};
+                        updateTimeline(run, pageData.request_items || [], pageData.hypothesis_items || []);
+                    } catch(e) {}
+                }
+            });
+        }
+
+        function deleteNoteFromEditor(noteId) {
+            fetch('/api/notes/' + noteId, { method: 'DELETE' }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    document.querySelector('.fixed')?.remove();
+                    window.location.reload();
+                }
+            });
+        }
+
+        function updateRunSnapshot() {
+            fetch(`/runs/${RUN_ID}/snapshot`)
+                .then(response => response.json())
+                .then(data => {
+                    const run = data.run || {};
+                    const findings = data.findings || [];
+                    const hypothesisItems = data.hypothesis_items || [];
+                    const requestItems = data.request_items || [];
+
+                    // --- Status badge + approve button ---
+                    if (run.status && run.status !== lastStatus) {
+                        updateStatusBadge(run.status);
+                        updateActionButtons(run);
+                        lastStatus = run.status;
+                    }
+
+                    // --- Progress bar & counts ---
+                    const total = run.total_requests || 0;
+                    const processed = run.processed_requests || 0;
+                    const percent = total > 0 ? Math.floor((processed / total) * 100) : 0;
+                    document.querySelectorAll('[data-progress-bar]').forEach(bar => { bar.style.width = percent + '%'; });
+                    document.querySelectorAll('[data-progress-text]').forEach(el => { el.textContent = percent + '%'; });
+                    document.querySelectorAll('[data-request-count]').forEach(el => { el.textContent = processed; });
+
+                    // --- Findings count + severity ---
+                    document.querySelectorAll('[data-findings-count]').forEach(el => { el.textContent = findings.length; });
+                    const sc = {
+                        critical: findings.filter(f => f.severity === 'critical').length,
+                        high: findings.filter(f => f.severity === 'high').length,
+                        medium: findings.filter(f => f.severity === 'medium').length,
+                        low: findings.filter(f => f.severity === 'low').length
+                    };
+                    ['critical', 'high', 'medium', 'low'].forEach(s => {
+                        document.querySelectorAll(`[data-severity-${s}]`).forEach(el => { el.textContent = sc[s]; });
+                    });
+
+                    // --- Hypothesis count ---
+                    document.querySelectorAll('[data-hypothesis-count]').forEach(el => { el.textContent = hypothesisItems.length; });
+
+                    // --- False positives count ---
+                    var fpCount = hypothesisItems.filter(function(h) { return h.stage === 'false_positive'; }).length;
+                    document.querySelectorAll('[data-false-positives]').forEach(el => { el.textContent = fpCount; });
+
+                    // --- Live Performance stats ---
+                    updatePerformanceStats(run, requestItems, hypothesisItems, findings);
+
+                    // --- Scan Timeline ---
+                    updateTimeline(run, requestItems, hypothesisItems);
+
+                    // --- Hypotheses & Findings feed ---
+                    updateActivityFeed(findings, hypothesisItems, requestItems);
+
+                    // --- Completion ---
+                    if (run.status === 'completed' || run.status === 'failed' || run.status === 'canceled') {
+                        // Final refresh to get server-rendered page
+                        window.location.reload();
+                    }
+                })
+                .catch(error => console.error('Snapshot update failed:', error));
+        }
+
+        function updateStatusBadge(status) {
+            const badge = document.querySelector('#run-header .rounded-full.text-xs');
+            if (!badge) return;
+            const map = {
+                'running': { cls: 'bg-warning/10 text-warning border border-warning/20', dot: 'bg-warning animate-pulse', label: 'In Progress' },
+                'awaiting_approval': { cls: 'bg-accent/10 text-accent border border-accent/20', dot: 'bg-accent animate-pulse', label: 'Awaiting Approval' },
+                'completed': { cls: 'bg-success/10 text-success border border-success/20', dot: 'bg-success', label: 'Completed' },
+                'failed': { cls: 'bg-danger/10 text-danger border border-danger/20', dot: 'bg-danger', label: 'Failed' },
+                'paused': { cls: 'bg-primary/10 text-primary border border-primary/20', dot: 'bg-primary', label: 'Paused' },
+                'canceled': { cls: 'bg-muted/10 text-muted border border-muted/20', dot: 'bg-muted', label: 'Canceled' },
+            };
+            const info = map[status] || map['running'];
+            badge.className = `px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2 ${info.cls}`;
+            badge.innerHTML = `<span class="w-2 h-2 rounded-full ${info.dot}"></span> ${info.label}`;
+        }
+
+        function updateActionButtons(run) {
+            const container = document.querySelector('#run-header .flex.items-center.gap-3');
+            if (!container) return;
+            // Rebuild action buttons based on current status
+            let html = '';
+            if (run.status === 'awaiting_approval') {
+                html += `<button onclick="approveAllPending(this)" id="approve-all-btn" class="px-4 py-2 rounded-lg bg-success text-white hover:bg-success/90 transition-colors text-sm font-medium flex items-center gap-2 animate-pulse-slow">
+                    <i class="fa-solid fa-check"></i> Approve & Continue
+                </button>`;
+            }
+            if (run.status === 'running') {
+                html += `<form method="POST" action="/runs/${RUN_ID}/pause" style="display: inline;">
+                    <button type="submit" class="px-4 py-2 rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-pause"></i> Pause
+                    </button>
+                </form>`;
+            }
+            html += `<button onclick="showLogs()" class="px-4 py-2 rounded-lg border border-muted/20 text-muted hover:bg-surface transition-colors text-sm font-medium flex items-center gap-2">
+                <i class="fa-solid fa-file-lines"></i> View Logs
+            </button>`;
+            if (run.status === 'running' || run.status === 'paused' || run.status === 'awaiting_approval') {
+                html += `<form method="POST" action="/runs/${RUN_ID}/cancel" style="display: inline;">
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-danger/10 border border-danger/20 text-danger hover:bg-danger/20 transition-colors text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-stop"></i> Cancel Scan
+                    </button>
+                </form>`;
+            }
+            html += `<button onclick="confirmDelete('${RUN_ID}')" class="px-4 py-2 rounded-lg border border-muted/20 text-muted hover:bg-surface hover:text-danger transition-colors text-sm font-medium flex items-center gap-2">
+                <i class="fa-solid fa-trash-can"></i> Delete
+            </button>`;
+            container.innerHTML = html;
+        }
+
+        function updatePerformanceStats(run, requestItems, hypothesisItems, findings) {
+            const processed = run.processed_requests || 0;
+            const total = run.total_requests || 0;
+
+            // Processed count
+            document.querySelectorAll('[data-perf-processed]').forEach(el => { el.textContent = processed + '/' + total; });
+
+            // Hypothesis count
+            var hypCount = hypothesisItems ? hypothesisItems.length : 0;
+            document.querySelectorAll('[data-perf-hypotheses]').forEach(el => { el.textContent = hypCount; });
+
+            // Findings count
+            var findCount = findings ? findings.length : 0;
+            document.querySelectorAll('[data-perf-findings]').forEach(el => { el.textContent = findCount; });
+
+            // Error rate
+            var errors = requestItems.filter(function(r) { return r.status === 'error'; }).length;
+            var errRate = requestItems.length > 0 ? ((errors / requestItems.length) * 100).toFixed(0) : '0';
+            document.querySelectorAll('[data-perf-error-rate]').forEach(el => { el.textContent = errRate + '%'; });
+
+            // Current endpoint + status
+            document.querySelectorAll('[data-current-endpoint]').forEach(el => { el.textContent = run.current_endpoint || 'Idle'; });
+            document.querySelectorAll('[data-run-status]').forEach(el => { el.textContent = run.status || '--'; });
+        }
+
+        function updateTimeline(run, requestItems, hypothesisItems) {
+            const timeline = document.getElementById('scan-timeline');
+            if (!timeline) return;
+            const total = run.total_requests || 0;
+            const status = run.status || '';
+
+            // Keep items in original order (by entry_index)
+            const sortedItems = [...requestItems].sort((a, b) => (a.entry_index || 0) - (b.entry_index || 0));
+
+            // Build entries
+            const entries = [];
+
+            // Phase: Init
+            entries.push({ title: 'Initialization', detail: `HAR file loaded, ${total} endpoints identified`, status: total > 0 ? 'completed' : 'pending' });
+            entries.push({ title: 'Domain Filtering & Scoping', detail: `Scoped to target domains`, status: total > 0 ? 'completed' : 'pending' });
+
+            // Per-request entries with hypothesis sub-steps
+            sortedItems.forEach((item, i) => {
+                const hyps = hypothesisItems.filter(h => h.request_id === item.request_id);
+                let itemStatus = 'pending';
+                if (item.status === 'completed' || item.status === 'error') itemStatus = item.status === 'error' ? 'error' : 'completed';
+                else if (item.status === 'running') itemStatus = 'active';
+                else if (item.status === 'awaiting_approval') itemStatus = 'approval';
+
+                entries.push({
+                    title: `${item.method} ${item.path.length > 45 ? item.path.substring(0, 42) + '...' : item.path}`,
+                    detail: item.summary || item.stage || 'Queued',
+                    status: itemStatus,
+                    requestId: item.request_id,
+                    findingsCount: item.findings_count || 0,
+                    hypotheses: hyps,
+                    index: i + 1,
+                });
+            });
+
+            // Phase: Report
+            entries.push({ title: 'Report Generation', detail: 'Compile findings into report', status: status === 'completed' ? 'completed' : (status === 'report_generation' ? 'active' : 'pending') });
+
+            // Render
+            const container = timeline.querySelector('.space-y-6') || timeline.querySelector('.space-y-4');
+            if (!container) return;
+
+            container.innerHTML = entries.map((entry, i) => {
+                const isLast = i === entries.length - 1;
+                const nextEntry = entries[i + 1];
+                let dotClass, lineClass, badgeClass, badgeText, iconHtml;
+
+                switch (entry.status) {
+                    case 'completed':
+                        dotClass = 'bg-success';
+                        lineClass = 'timeline-line-done';
+                        badgeClass = 'bg-success/10 text-success'; badgeText = 'Done';
+                        iconHtml = '<i class="fa-solid fa-check text-[8px] text-white"></i>';
+                        break;
+                    case 'active':
+                        dotClass = 'bg-warning timeline-dot-active';
+                        lineClass = 'timeline-line-active';
+                        badgeClass = 'bg-warning/10 text-warning'; badgeText = 'Running';
+                        iconHtml = '<svg class="timeline-spin" width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="white" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>';
+                        break;
+                    case 'approval':
+                        dotClass = 'bg-accent timeline-dot-active';
+                        lineClass = 'timeline-line-active';
+                        badgeClass = 'bg-accent/10 text-accent'; badgeText = 'Awaiting Approval';
+                        iconHtml = '<i class="fa-solid fa-hand text-[7px] text-white"></i>';
+                        break;
+                    case 'error':
+                        dotClass = 'bg-danger';
+                        lineClass = 'timeline-line-done';
+                        badgeClass = 'bg-danger/10 text-danger'; badgeText = 'Error';
+                        iconHtml = '<i class="fa-solid fa-xmark text-[8px] text-white"></i>';
+                        break;
+                    default:
+                        dotClass = 'bg-gray-300';
+                        lineClass = 'timeline-line-pending';
+                        badgeClass = 'bg-gray-100 text-muted'; badgeText = 'Queued';
+                        iconHtml = '<span class="w-1.5 h-1.5 rounded-full bg-white/60"></span>';
+                }
+
+                // Line should only be solid/animated up to the current active entry
+                // After active entry, lines should be pending
+                if (entry.status === 'pending' && !isLast) {
+                    lineClass = 'timeline-line-pending';
+                }
+
+                const findingsBadge = entry.findingsCount > 0
+                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-danger/10 text-danger"><i class="fa-solid fa-bug mr-0.5"></i>${entry.findingsCount}</span>`
+                    : '';
+
+                // Build hypothesis sub-steps
+                let subStepsHtml = '';
+                if (entry.hypotheses && entry.hypotheses.length > 0) {
+                    subStepsHtml = '<div class="mt-2 ml-1 space-y-1.5">';
+                    entry.hypotheses.forEach(h => {
+                        let subDotClass = 'bg-gray-300';
+                        let subLabel = h.attack_type || 'Hypothesis';
+                        let subIcon = '';
+                        if (h.status === 'evaluated' || h.execution_outcome) {
+                            if (h.execution_outcome === 'vulnerable') {
+                                subDotClass = 'bg-danger';
+                                subIcon = '<i class="fa-solid fa-bug text-danger text-[9px] mr-1"></i>';
+                            } else {
+                                subDotClass = 'bg-success';
+                                subIcon = '<i class="fa-solid fa-shield-halved text-success text-[9px] mr-1"></i>';
+                            }
+                        } else if (h.status === 'executed') {
+                            subDotClass = 'bg-primary';
+                            subIcon = '<i class="fa-solid fa-flask text-primary text-[9px] mr-1"></i>';
+                        } else if (h.status === 'generated') {
+                            subDotClass = 'bg-warning';
+                            subIcon = '<i class="fa-solid fa-lightbulb text-warning text-[9px] mr-1"></i>';
+                        }
+
+                        subStepsHtml += `
+                            <a href="/runs/${RUN_ID}/requests/${h.request_id}" class="timeline-substep py-1 block hover:bg-primary/5 rounded -mx-1 px-1 transition-colors">
+                                <div class="timeline-substep-dot ${subDotClass}"></div>
+                                <div class="flex items-center gap-1.5 text-[11px]">
+                                    ${subIcon}
+                                    <span class="text-muted">${subLabel}</span>
+                                    ${h.execution_outcome ? `<span class="px-1 py-0 rounded text-[9px] font-medium ${h.execution_outcome === 'vulnerable' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'}">${h.execution_outcome}</span>` : ''}
+                                    ${h.response_status_code > 0 ? `<span class="text-muted">(${h.response_status_code})</span>` : ''}
+                                    ${h.stage === 'false_positive' ? `<span class="px-1 py-0 rounded text-[9px] font-medium bg-muted/10 text-muted line-through">false positive</span>` : ''}
+                                    ${h.stage === 'validated' ? `<span class="px-1 py-0 rounded text-[9px] font-medium bg-danger/10 text-danger"><i class="fa-solid fa-check-double mr-0.5"></i>confirmed</span>` : ''}
+                                    ${h.findings_count > 0 ? `<span class="px-1 py-0 rounded text-[9px] font-medium bg-danger/10 text-danger"><i class="fa-solid fa-bug mr-0.5"></i>${h.findings_count}</span>` : ''}
+                                </div>
+                            </a>`;
+                    });
+                    subStepsHtml += '</div>';
+                }
+
+                const linkStart = entry.requestId ? `<a href="/runs/${RUN_ID}/requests/${entry.requestId}" class="hover:bg-primary/5 rounded-lg -mx-2 px-2 py-1 transition-colors block">` : '';
+                const linkEnd = entry.requestId ? '</a>' : '';
+                const indexLabel = entry.index ? `<span class="text-[10px] text-muted bg-surface px-1.5 py-0.5 rounded">#${entry.index}</span>` : '';
+
+                // Note indicator
+                var noteCount = entry.requestId ? (_noteCounts[entry.requestId] || 0) : 0;
+                var noteBtn = '';
+                if (entry.requestId && noteCount > 0) {
+                    noteBtn = `<button onclick="event.preventDefault(); event.stopPropagation(); openNoteEditor('${RUN_ID}', '${entry.requestId}', '')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 transition-colors ml-auto flex-shrink-0" title="${noteCount} note(s)"><i class="fa-solid fa-note-sticky text-xs"></i><span class="text-[11px] font-semibold">${noteCount}</span></button>`;
+                } else if (entry.requestId) {
+                    noteBtn = `<button onclick="event.preventDefault(); event.stopPropagation(); openNoteEditor('${RUN_ID}', '${entry.requestId}', '')" class="w-7 h-7 rounded-lg flex items-center justify-center text-muted/30 hover:text-accent hover:bg-accent/10 transition-colors ml-auto flex-shrink-0" title="Add note"><i class="fa-solid fa-note-sticky text-xs"></i></button>`;
+                }
+
+                return `
+                    <div class="relative pl-8 pb-1">
+                        <div class="timeline-dot ${dotClass} absolute left-0 top-1">${iconHtml}</div>
+                        ${!isLast ? `<div class="timeline-line ${lineClass}" style="height: calc(100% + 4px);"></div>` : ''}
+                        ${linkStart}
+                        <div class="flex items-center gap-2 flex-wrap">
+                            ${indexLabel}
+                            <span class="text-sm font-semibold text-text">${entry.title}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-medium ${badgeClass}">${badgeText}</span>
+                            ${findingsBadge}
+                            ${noteBtn}
+                        </div>
+                        <p class="text-xs text-muted mt-0.5">${entry.detail}</p>
+                        ${subStepsHtml}
+                        ${linkEnd}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Store feed data globally so filter can re-render
+        let _feedFindings = [];
+        let _feedHypotheses = [];
+        let _feedFilter = 'all';
+
+        function setFeedFilter(filter) {
+            _feedFilter = filter;
+            document.querySelectorAll('.feed-filter-btn').forEach(btn => {
+                if (btn.dataset.filter === filter) {
+                    btn.className = 'feed-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors';
+                } else {
+                    btn.className = 'feed-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:bg-surface transition-colors';
+                }
+            });
+            renderActivityFeed();
+        }
+
+        function updateActivityFeed(findings, hypothesisItems, requestItems) {
+            _feedFindings = findings;
+            _feedHypotheses = hypothesisItems;
+            renderActivityFeed();
+        }
+
+        function renderActivityFeed() {
+            const feed = document.getElementById('activity-feed');
+            if (!feed) return;
+
+            const items = [];
+
+            if (_feedFilter !== 'hypotheses') {
+                _feedFindings.forEach(f => {
+                    items.push({ type: 'finding', severity: f.severity || 'info', title: f.title || 'Finding', endpoint: f.endpoint || '', detail: f.description || '', time: f.created_at || '', requestId: f.request_id || '', raw: f });
+                });
+            }
+
+            if (_feedFilter !== 'findings') {
+                _feedHypotheses.forEach(h => {
+                    items.push({
+                        type: 'hypothesis', severity: h.severity || 'info',
+                        title: `${h.attack_type}: ${h.mutation_summary || 'Hypothesis'}`,
+                        endpoint: `${h.method || ''} ${h.url || ''}`.trim(),
+                        detail: h.rationale || '', time: h.updated_at || '',
+                        requestId: h.request_id || '', status: h.status || 'generated',
+                        outcome: h.execution_outcome || '', raw: h,
+                    });
+                });
+            }
+
+            items.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+
+            if (items.length === 0) {
+                const emptyMsg = _feedFilter === 'findings' ? 'No findings yet' : _feedFilter === 'hypotheses' ? 'No hypotheses yet' : 'No findings or hypotheses yet';
+                feed.innerHTML = `<div class="p-8 text-center text-muted"><i class="fa-solid fa-inbox text-3xl mb-2 block opacity-50"></i><p class="text-sm">${emptyMsg}</p></div>`;
+                return;
+            }
+
+            feed.innerHTML = items.slice(0, 30).map((item, idx) => {
+                const cardId = `feed-card-${idx}`;
+                const time = item.time ? new Date(item.time).toLocaleTimeString() : '';
+
+                if (item.type === 'finding') {
+                    const sevClass = { critical: 'border-danger/20 bg-danger/5', high: 'border-warning/20 bg-warning/5', medium: 'border-warning/20 bg-warning/5', low: 'border-success/20 bg-success/5' }[item.severity] || 'border-primary/10';
+                    const badgeClass = { critical: 'severity-critical', high: 'severity-high', medium: 'severity-medium', low: 'severity-low' }[item.severity] || 'severity-info';
+                    return `
+                        <div class="rounded-lg border ${sevClass} cursor-pointer hover:shadow-md transition-shadow" onclick="toggleFeedDetail('${cardId}')">
+                            <div class="p-4">
+                                <div class="flex items-start justify-between mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fa-solid fa-bug text-danger text-xs"></i>
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium ${badgeClass}">${(item.severity || '').toUpperCase()}</span>
+                                        <span class="text-sm font-semibold text-text">${item.title}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-muted">${time}</span>
+                                        <i class="fa-solid fa-chevron-down text-muted text-[10px] transition-transform" id="${cardId}-chevron"></i>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-muted">Endpoint: <span class="font-mono text-primary">${item.endpoint}</span></p>
+                            </div>
+                            <div id="${cardId}" class="hidden border-t border-primary/10 p-4 bg-white/50 space-y-3">
+                                ${item.detail ? `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Description</p><p class="text-sm text-text">${item.detail}</p></div>` : ''}
+                                ${item.raw.remediation ? `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Remediation</p><p class="text-sm text-text">${item.raw.remediation}</p></div>` : ''}
+                                ${item.raw.reproduction_curl ? `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Reproduction</p><pre class="text-xs font-mono bg-surface p-2 rounded overflow-x-auto">${item.raw.reproduction_curl}</pre></div>` : ''}
+                                <div class="pt-2"><a href="/runs/${RUN_ID}/requests/${item.requestId}" class="text-xs font-medium text-primary hover:underline"><i class="fa-solid fa-arrow-right mr-1"></i>Open Full Request Detail</a></div>
+                            </div>
+                        </div>`;
+                } else {
+                    const statusIcon = { 'generated': 'fa-lightbulb text-warning', 'executed': 'fa-flask text-primary', 'evaluated': 'fa-check-double text-success' }[item.status] || 'fa-lightbulb text-muted';
+                    const statusLabel = { 'generated': 'Generated', 'executed': 'Executed', 'evaluated': item.outcome || 'Evaluated' }[item.status] || item.status;
+                    const borderClass = item.outcome === 'vulnerable' ? 'border-danger/20 bg-danger/5' : 'border-primary/10 bg-surface/50';
+                    const h = item.raw;
+
+                    // Build detail sections
+                    let detailHtml = '';
+                    if (h.rationale) detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Rationale</p><p class="text-sm text-text">${h.rationale}</p></div>`;
+                    if (h.expected_signal) detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Expected Signal</p><p class="text-sm text-text">${h.expected_signal}</p></div>`;
+
+                    // Request sent
+                    if (h.url) {
+                        detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Request Sent</p><pre class="text-xs font-mono bg-surface p-2 rounded overflow-x-auto">${h.method || 'POST'} ${h.url}</pre></div>`;
+                    }
+                    if (h.body) {
+                        detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Request Body</p><pre class="text-xs font-mono bg-surface p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">${escapeHtml(h.body)}</pre></div>`;
+                    }
+
+                    // Response received
+                    if (h.response_status_code > 0) {
+                        const statusColor = h.response_status_code >= 400 ? 'text-danger' : h.response_status_code >= 300 ? 'text-warning' : 'text-success';
+                        detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Response</p><span class="text-sm font-bold ${statusColor}">${h.response_status_code}</span></div>`;
+                    }
+                    if (h.response_body) {
+                        detailHtml += `<div><p class="text-xs font-semibold text-muted uppercase mb-1">Response Body</p><pre class="text-xs font-mono bg-surface p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">${escapeHtml(h.response_body.substring(0, 2000))}${h.response_body.length > 2000 ? '\n...(truncated)' : ''}</pre></div>`;
+                    }
+
+                    // Outcome
+                    if (h.execution_outcome) {
+                        const outcomeClass = h.execution_outcome === 'vulnerable' ? 'bg-danger/10 text-danger border-danger/20' : 'bg-success/10 text-success border-success/20';
+                        detailHtml += `<div class="p-3 rounded-lg border ${outcomeClass}"><p class="text-sm font-medium"><i class="fa-solid ${h.execution_outcome === 'vulnerable' ? 'fa-bug' : 'fa-shield-halved'} mr-1"></i>Outcome: ${h.execution_outcome}</p></div>`;
+                    }
+
+                    return `
+                        <div class="rounded-lg border ${borderClass} cursor-pointer hover:shadow-md transition-shadow" onclick="toggleFeedDetail('${cardId}')">
+                            <div class="p-4">
+                                <div class="flex items-start justify-between mb-2">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <i class="fa-solid ${statusIcon} text-xs"></i>
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">${statusLabel}</span>
+                                        <span class="text-sm font-semibold text-text">${item.title}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-shrink-0">
+                                        <span class="text-xs text-muted">${time}</span>
+                                        <i class="fa-solid fa-chevron-down text-muted text-[10px] transition-transform" id="${cardId}-chevron"></i>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-muted">${item.endpoint}</p>
+                                ${item.detail && !h.execution_outcome ? `<p class="text-xs text-muted mt-1 line-clamp-2">${item.detail}</p>` : ''}
+                            </div>
+                            <div id="${cardId}" class="hidden border-t border-primary/10 p-4 bg-white/50 space-y-3">
+                                ${detailHtml}
+                                <div class="pt-2"><a href="/runs/${RUN_ID}/requests/${item.requestId}" class="text-xs font-medium text-primary hover:underline"><i class="fa-solid fa-arrow-right mr-1"></i>Open Full Request Detail</a></div>
+                            </div>
+                        </div>`;
+                }
+            }).join('');
+        }
+
+        function toggleFeedDetail(cardId) {
+            const detail = document.getElementById(cardId);
+            const chevron = document.getElementById(cardId + '-chevron');
+            if (!detail) return;
+            if (detail.classList.contains('hidden')) {
+                detail.classList.remove('hidden');
+                if (chevron) chevron.style.transform = 'rotate(180deg)';
+            } else {
+                detail.classList.add('hidden');
+                if (chevron) chevron.style.transform = '';
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Initialize feed AND timeline from server-rendered data immediately
+        (function initFromPageData() {
+            try {
+                const pageData = JSON.parse(document.getElementById('page-data').textContent);
+                _feedFindings = pageData.findings || [];
+                _feedHypotheses = pageData.hypothesis_items || [];
+                renderActivityFeed();
+                // Also render timeline from page data
+                const run = {{ run.to_dict() | tojson | safe }};
+                updateTimeline(run, pageData.request_items || [], pageData.hypothesis_items || []);
+                updatePerformanceStats(run, pageData.request_items || [], pageData.hypothesis_items || [], pageData.findings || []);
+            } catch(e) { console.error('Failed to init from page data:', e); }
+        })();
+
+        // Start polling if run is still active
+        {% if run.status in ('running', 'processing', 'hypothesis_execution', 'report_generation', 'paused', 'awaiting_approval') %}
+            setInterval(updateRunSnapshot, RUN_SNAPSHOT_INTERVAL);
+            // Immediate first poll
+            updateRunSnapshot();
+        {% endif %}
+
+        // Update elapsed time display (only if still active)
+        {% if run.status in ('running', 'processing', 'hypothesis_execution', 'report_generation', 'paused', 'awaiting_approval') %}
+        window.addEventListener('load', function() {
+            let elapsedSeconds = {{ elapsed_seconds }};
+            setInterval(function() {
+                elapsedSeconds++;
+                const minutes = Math.floor(elapsedSeconds / 60);
+                const seconds = elapsedSeconds % 60;
+                document.querySelectorAll('[data-elapsed]').forEach(el => {
+                    el.textContent = minutes + 'm ' + (seconds < 10 ? '0' : '') + seconds + 's';
+                });
+            }, 1000);
+        });
+        {% endif %}
+
+        function approveAllPending(btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Approving...';
+            fetch(`/runs/${RUN_ID}/approve-all`, { method: 'POST', headers: { 'Accept': 'application/json' } })
+                .then(r => r.json())
+                .then(data => {
+                    btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i>Approved — switching to auto mode';
+                    btn.className = btn.className.replace('animate-pulse-slow', '');
+                    // Trigger an immediate snapshot update
+                    setTimeout(() => updateRunSnapshot(), 500);
+                    setTimeout(() => { btn.style.display = 'none'; }, 3000);
+                })
+                .catch(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i>Approve & Continue';
+                });
+        }
+
+        function showLogs() {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+            modal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
+                    <div class="p-5 border-b border-primary/10 flex items-center justify-between">
+                        <h3 class="font-semibold text-text"><i class="fa-solid fa-file-lines mr-2 text-primary"></i>Scan Logs & Artifacts</h3>
+                        <button onclick="this.closest('.fixed').remove()" class="text-muted hover:text-primary"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="p-5 overflow-y-auto flex-1 space-y-4" id="logs-content">
+                        <div class="text-center p-8 text-muted"><i class="fa-solid fa-spinner fa-spin text-xl mb-2"></i><p class="text-sm">Loading logs...</p></div>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            fetch(`/runs/${RUN_ID}/logs`)
+                .then(r => r.json())
+                .then(data => {
+                    const container = document.getElementById('logs-content');
+                    if (!container) return;
+                    let html = '';
+
+                    // Error section
+                    if (data.last_error) {
+                        html += `
+                            <div class="p-4 rounded-lg bg-danger/5 border border-danger/20">
+                                <p class="text-sm font-semibold text-danger mb-2"><i class="fa-solid fa-circle-exclamation mr-1"></i>Error</p>
+                                <p class="text-sm text-text">${escapeHtml(data.last_error)}</p>
+                            </div>`;
+                    }
+
+                    // Failure traceback
+                    if (data.failure) {
+                        html += `
+                            <div>
+                                <p class="text-sm font-semibold text-text mb-2"><i class="fa-solid fa-bug mr-1 text-danger"></i>Failure Traceback</p>
+                                <pre class="text-xs font-mono bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto max-h-64 overflow-y-auto whitespace-pre">${escapeHtml(data.failure)}</pre>
+                            </div>`;
+                    }
+
+                    // Artifact directory
+                    html += `
+                        <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                            <p class="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Artifact Directory</p>
+                            <p class="text-sm font-mono text-text break-all">${escapeHtml(data.artifact_dir || '')}</p>
+                            <p class="text-xs text-muted mt-1">Status: <span class="font-medium">${data.run_status || 'unknown'}</span></p>
+                        </div>`;
+
+                    // Scan progress log
+                    if (data.scan_log) {
+                        html += `
+                            <div>
+                                <p class="text-sm font-semibold text-text mb-2"><i class="fa-solid fa-scroll mr-1 text-primary"></i>Scan Progress Log</p>
+                                <pre class="text-[11px] font-mono bg-gray-900 text-gray-300 p-4 rounded-lg overflow-x-auto max-h-64 overflow-y-auto whitespace-pre">${escapeHtml(data.scan_log)}</pre>
+                            </div>`;
+                    }
+
+                    // Download debug dump link
+                    html += `
+                        <div class="flex gap-2">
+                            <a href="/runs/${RUN_ID}/debug-dump" target="_blank" class="px-4 py-2 rounded-lg border border-primary/20 text-primary hover:bg-primary/5 text-sm font-medium inline-flex items-center gap-2">
+                                <i class="fa-solid fa-download"></i>Download Full Debug Dump (JSON)
+                            </a>
+                        </div>`;
+
+                    // Debug files
+                    const debugFiles = Object.keys(data).filter(k => k.startsWith('debug-'));
+                    if (debugFiles.length > 0) {
+                        html += `<div><p class="text-sm font-semibold text-text mb-2"><i class="fa-solid fa-file-code mr-1 text-primary"></i>Debug Artifacts (${debugFiles.length})</p>`;
+                        debugFiles.forEach(name => {
+                            html += `
+                                <details class="mb-2">
+                                    <summary class="text-xs font-medium text-primary cursor-pointer hover:bg-primary/5 p-2 rounded">${escapeHtml(name)}</summary>
+                                    <pre class="text-[11px] font-mono bg-surface p-3 rounded-lg overflow-x-auto max-h-48 overflow-y-auto mt-1">${escapeHtml(data[name])}</pre>
+                                </details>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    // Tip
+                    if (!data.failure && !data.last_error) {
+                        html += `<p class="text-sm text-muted">Server logs are printed to the terminal. Look for lines starting with <code class="bg-surface px-1 rounded text-xs">[web:]</code>.</p>`;
+                    }
+
+                    container.innerHTML = html;
+                })
+                .catch(err => {
+                    const container = document.getElementById('logs-content');
+                    if (container) container.innerHTML = `<p class="text-sm text-danger">Failed to load logs: ${err.message}</p>`;
+                });
+        }
+
+        function confirmDelete(runId) {
+            if (confirm('Are you sure you want to delete this scan and all associated data? This action cannot be undone.')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/runs/${runId}/delete`;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+
+{% endblock %}

@@ -1,730 +1,779 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ item.request_id if item else "Request" }} - HAR Analyzer</title>
-    <style>
-      :root {
-        --bg: #f4efe7;
-        --surface: rgba(255, 251, 246, 0.92);
-        --surface-strong: rgba(255, 255, 255, 0.72);
-        --border: rgba(90, 66, 46, 0.14);
-        --border-strong: rgba(90, 66, 46, 0.2);
-        --text: #1f1812;
-        --muted: #6d5d4f;
-        --brand: #165a57;
-        --brand-strong: #0f4442;
-        --accent: #b77222;
-        --danger: #a64b3a;
-        --shadow: 0 22px 60px rgba(61, 44, 28, 0.12);
-        --radius-xl: 28px;
-        --radius-lg: 18px;
-        --radius-md: 12px;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        color: var(--text);
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(22, 90, 87, 0.16), transparent 24rem),
-          radial-gradient(circle at top right, rgba(183, 114, 34, 0.14), transparent 22rem),
-          linear-gradient(180deg, var(--bg), #faf6f0);
-      }
-      a { color: inherit; text-decoration: none; }
-      .page {
-        width: min(1380px, calc(100% - 2rem));
-        margin: 1.4rem auto 2.6rem;
-      }
-      .back-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        margin-bottom: 1rem;
-        color: var(--muted);
-        font-weight: 700;
-      }
-      .hero, .panel, .attempt-card, .hypothesis-card {
-        background: var(--surface);
-        backdrop-filter: blur(18px);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-xl);
-        box-shadow: var(--shadow);
-      }
-      .hero { padding: 1.45rem; margin-bottom: 1.15rem; }
-      h1, h2, h3 {
-        margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", serif;
-      }
-      h1 {
-        font-size: clamp(2rem, 3vw, 3rem);
-        line-height: 1;
-        letter-spacing: -0.03em;
-      }
-      h2 { font-size: 1.5rem; }
-      h3 { font-size: 1.12rem; }
-      .summary {
-        margin-top: 0.75rem;
-        color: var(--muted);
-        line-height: 1.55;
-        max-width: 72rem;
-      }
-      .hero-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: flex-start;
-      }
-      .hero-badges {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.55rem;
-        justify-content: flex-end;
-      }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.42rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(22, 90, 87, 0.1);
-        color: var(--brand-strong);
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-      }
-      .pill.warn { background: rgba(183, 114, 34, 0.12); color: #8a5417; }
-      .pill.danger { background: rgba(166, 75, 58, 0.12); color: #873a2d; }
-      .meta-grid {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 0.85rem;
-        margin-top: 1.15rem;
-      }
-      .meta-card {
-        padding: 0.95rem 1rem;
-        border-radius: var(--radius-lg);
-        border: 1px solid rgba(90, 66, 46, 0.12);
-        background: rgba(255, 255, 255, 0.62);
-      }
-      .meta-card .label {
-        color: var(--muted);
-        font-size: 0.76rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .meta-card .value {
-        margin-top: 0.35rem;
-        font-weight: 700;
-        word-break: break-word;
-      }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        margin-top: 1.2rem;
-      }
-      .toolbar form { margin: 0; }
-      .button {
-        appearance: none;
-        border: none;
-        cursor: pointer;
-        border-radius: 999px;
-        padding: 0.84rem 1.15rem;
-        font: inherit;
-        font-weight: 700;
-      }
-      .button-primary {
-        color: white;
-        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
-      }
-      .button-danger {
-        color: white;
-        background: linear-gradient(135deg, var(--danger), #8b392d);
-      }
-      .button-secondary {
-        color: var(--text);
-        background: rgba(255, 255, 255, 0.78);
-        border: 1px solid rgba(90, 66, 46, 0.16);
-      }
-      .flow { display: grid; gap: 1.2rem; }
-      .panel { padding: 1.2rem; }
-      .panel-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: baseline;
-        margin-bottom: 0.75rem;
-      }
-      .panel-header p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.94rem;
-      }
-      .overview-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.9rem;
-      }
-      .compact-card {
-        padding: 1rem;
-        border-radius: var(--radius-lg);
-        border: 1px solid rgba(90, 66, 46, 0.12);
-        background: rgba(255, 255, 255, 0.62);
-      }
-      .compact-card .eyebrow {
-        color: var(--muted);
-        font-size: 0.76rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .compact-card .headline {
-        margin-top: 0.45rem;
-        font-weight: 700;
-      }
-      .compact-card .snippet {
-        margin-top: 0.65rem;
-        color: var(--muted);
-        font-size: 0.93rem;
-        line-height: 1.5;
-      }
-      .attempt-card, .hypothesis-card {
-        padding: 1rem;
-        border-radius: var(--radius-lg);
-        background: rgba(255, 255, 255, 0.6);
-        border-color: rgba(90, 66, 46, 0.12);
-      }
-      .attempt-card + .attempt-card,
-      .hypothesis-card + .hypothesis-card {
-        margin-top: 0.95rem;
-      }
-      .attempt-head, .hypothesis-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: flex-start;
-      }
-      .attempt-meta, .hypothesis-meta {
-        margin-top: 0.45rem;
-        color: var(--muted);
-        font-size: 0.93rem;
-        line-height: 1.5;
-      }
-      .tag-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-top: 0.7rem;
-      }
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        padding: 0.36rem 0.6rem;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.84);
-        border: 1px solid rgba(90, 66, 46, 0.12);
-        color: var(--muted);
-        font-size: 0.82rem;
-      }
-      .details-grid {
-        display: grid;
-        gap: 0.8rem;
-        margin-top: 0.85rem;
-      }
-      details {
-        border: 1px solid rgba(90, 66, 46, 0.12);
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.7);
-      }
-      summary {
-        cursor: pointer;
-        padding: 0.78rem 0.9rem;
-        color: var(--brand-strong);
-        font-weight: 700;
-        list-style: none;
-      }
-      summary::-webkit-details-marker { display: none; }
-      .details-body {
-        padding: 0 0.9rem 0.9rem;
-      }
-      pre {
-        margin: 0;
-        padding: 0.95rem;
-        border-radius: var(--radius-md);
-        background: #f6efe7;
-        overflow-x: auto;
-        white-space: pre-wrap;
-        border: 1px solid rgba(90, 66, 46, 0.08);
-      }
-      .muted { color: var(--muted); font-size: 0.92rem; }
-      .empty { color: var(--muted); }
-      .findings-list { display: grid; gap: 0.85rem; }
-      .finding-card {
-        padding: 1rem;
-        border-radius: var(--radius-lg);
-        border: 1px solid rgba(90, 66, 46, 0.1);
-        background: rgba(255, 255, 255, 0.58);
-      }
-      .finding-card h3 { margin-top: 0.55rem; }
-      .hidden { display: none !important; }
-      @media (max-width: 1180px) {
-        .meta-grid, .overview-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      @media (max-width: 720px) {
-        .page { width: min(100% - 1rem, 1380px); margin: 1rem auto 2rem; }
-        .hero, .panel { padding: 1.05rem; }
-        .hero-top, .attempt-head, .hypothesis-head {
-          flex-direction: column;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      {% if run %}
-      <a class="back-link" href="/runs/{{ run.run_id }}">Back to run</a>
-      {% endif %}
+{% extends "_base.html" %}
 
-      {% if item %}
-      <section class="hero">
-        <div class="hero-top">
-          <div>
-            <h1 id="item-title">{{ item.method }} {{ item.path }}</h1>
-            <p id="item-summary" class="summary">{{ item.summary }}</p>
-            {% if item.error %}
-            <p id="item-error" class="summary" style="color:#8b392d;">{{ item.error }}</p>
-            {% else %}
-            <p id="item-error" class="summary hidden" style="color:#8b392d;"></p>
-            {% endif %}
-          </div>
-          <div class="hero-badges">
-            <span id="item-status" class="pill">{{ item.status }}</span>
-            <span id="item-approval-badge" class="pill warn">{{ item.approval_state }}</span>
-          </div>
-        </div>
+{% block title %}{{ item.method if item else 'Request' }} {{ item.path if item else '' }} - HAR Analyzer{% endblock %}
 
-        <div class="meta-grid">
-          <div class="meta-card">
-            <div class="label">Stage</div>
-            <div id="item-stage" class="value">{{ item.stage }}</div>
-          </div>
-          <div class="meta-card">
-            <div class="label">Request Id</div>
-            <div id="item-request-id" class="value">{{ item.request_id }}</div>
-          </div>
-          <div class="meta-card">
-            <div class="label">Attempts</div>
-            <div id="item-attempt-count" class="value">{{ llm_attempt_items|length }}</div>
-          </div>
-          <div class="meta-card">
-            <div class="label">Hypotheses / Replays</div>
-            <div id="item-counts" class="value">{{ item.hypothesis_count }} / {{ item.executed_count }}</div>
-          </div>
-          <div class="meta-card">
-            <div class="label">Findings</div>
-            <div id="item-findings" class="value">{{ item.findings_count }}</div>
-          </div>
-        </div>
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-light.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+<style>
+    .severity-critical { background: #a64b3a; color: white; }
+    .severity-high { background: #d97706; color: white; }
+    .severity-medium { background: #d97706; color: white; }
+    .severity-low { background: #2d8a3a; color: white; }
+    .severity-info { background: #165a57; color: white; }
+    pre[class*="language-"] { margin: 0; border-radius: 8px; font-size: 13px; }
+    .hljs { padding: 16px !important; }
+    .method-badge { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; padding: 4px 8px; border-radius: 4px; display: inline-block; }
+    .method-get { background: #e0f2f1; color: #00695c; }
+    .method-post { background: #fff3e0; color: #e65100; }
+    .method-put { background: #f3e5f5; color: #6a1b9a; }
+    .method-delete { background: #ffebee; color: #c62828; }
+    .method-patch { background: #e8f5e9; color: #1b5e20; }
+    /* Hypothesis card borders */
+    .hyp-card-vulnerable { border-left: 4px solid #a64b3a; }
+    .hyp-card-safe, .hyp-card-not_vulnerable { border-left: 4px solid #2d8a3a; }
+    .hyp-card-http_error, .hyp-card-transport_error { border-left: 4px solid #d97706; }
+    .hyp-card-ok { border-left: 4px solid #2d8a3a; }
+    .hyp-card-pending, .hyp-card- { border-left: 4px solid #cbd5e1; }
+    details summary { cursor: pointer; }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::marker { display: none; content: ''; }
+    details[open] > summary .chevron { transform: rotate(180deg); }
+    .chevron { transition: transform 0.2s ease; }
+</style>
+{% endblock %}
 
-        <div class="toolbar">
-          <div id="approval-actions" class="{% if item.approval_state != 'pending' %}hidden{% endif %}" style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-            <form method="post" action="/runs/{{ run.run_id }}/requests/{{ item.request_id }}/approve">
-              <button class="button button-primary" type="submit">Approve LLM send</button>
-            </form>
-            <form method="post" action="/runs/{{ run.run_id }}/requests/{{ item.request_id }}/skip">
-              <button class="button button-danger" type="submit">Skip this request</button>
-            </form>
-          </div>
-          <a id="latest-debug-link" class="button button-secondary {% if not item.debug_artifact_path %}hidden{% endif %}" href="/runs/{{ run.run_id }}/debug/{{ item.request_id }}">Open latest raw LLM response</a>
-        </div>
-      </section>
+{% block breadcrumb %}
+<a href="/" class="hover:text-primary transition-colors">Dashboard</a>
+<i class="fa-solid fa-chevron-right text-xs mx-2"></i>
+<a href="/runs/{{ run.run_id }}" class="hover:text-primary transition-colors">{{ run.har_path | basename }}</a>
+<i class="fa-solid fa-chevron-right text-xs mx-2"></i>
+<span class="text-text font-medium">{% if item %}{{ item.method }} {{ item.path }}{% else %}Request{% endif %}</span>
+{% endblock %}
 
-      <section class="flow">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Request Snapshot</h2>
-              <p>Original request and baseline response stay visible while the analyzer works through hypotheses.</p>
+{% block content %}
+<div class="p-6 lg:p-8">
+    <div class="max-w-6xl mx-auto">
+        {% if item %}
+        <!-- ==================== SECTION 1: HEADER ==================== -->
+        <div class="mb-6">
+            <div class="flex items-center gap-3 mb-4">
+                <a href="/runs/{{ run.run_id }}" class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:bg-primary/5 hover:text-primary transition-colors">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </a>
+                <span class="method-badge {% if item.method == 'GET' %}method-get{% elif item.method == 'POST' %}method-post{% elif item.method == 'PUT' %}method-put{% elif item.method == 'DELETE' %}method-delete{% elif item.method == 'PATCH' %}method-patch{% endif %}">{{ item.method }}</span>
+                <h2 class="text-2xl font-bold text-primary-dark">{{ item.path }}</h2>
+                <span class="px-2 py-0.5 rounded text-xs font-medium
+                    {% if item.status == 'completed' %}bg-success/10 text-success
+                    {% elif item.status == 'error' %}bg-danger/10 text-danger
+                    {% elif item.status == 'running' %}bg-warning/10 text-warning
+                    {% elif item.status == 'awaiting_approval' %}bg-accent/10 text-accent
+                    {% else %}bg-muted/10 text-muted{% endif %}">
+                    {{ item.status }}
+                </span>
             </div>
-          </div>
-          <div class="overview-grid">
-            <article class="compact-card">
-              <div class="eyebrow">Original Request</div>
-              <div id="request-headline" class="headline">{{ item.method }} {{ item.url }}</div>
-              <div id="request-snippet" class="snippet">{{ item.request_body[:220] if item.request_body else "No request body." }}</div>
-              <div class="details-grid">
-                <details>
-                  <summary>Full request headers</summary>
-                  <div class="details-body">
-                    <pre id="request-headers">{{ item.request_headers_json }}</pre>
-                  </div>
-                </details>
-                <details>
-                  <summary>Full request body</summary>
-                  <div class="details-body">
-                    <pre id="request-body">{{ item.request_body or "[No Body]" }}</pre>
-                  </div>
-                </details>
-              </div>
-            </article>
-
-            <article class="compact-card">
-              <div class="eyebrow">Original Response</div>
-              <div id="original-response-headline" class="headline">Status {{ item.original_response_status }}</div>
-              <div id="original-response-snippet" class="snippet">{{ item.original_response_body[:220] if item.original_response_body else "No baseline response body." }}</div>
-              <div class="details-grid">
-                <details>
-                  <summary>Full response headers</summary>
-                  <div class="details-body">
-                    <pre id="original-response-headers">{{ item.original_response_headers_json }}</pre>
-                  </div>
-                </details>
-                <details>
-                  <summary>Full response body</summary>
-                  <div class="details-body">
-                    <pre id="original-response-body">{{ item.original_response_body or "[No Body]" }}</pre>
-                  </div>
-                </details>
-              </div>
-            </article>
-          </div>
+            <code class="font-mono text-sm text-primary bg-primary/5 px-3 py-1.5 rounded inline-block break-all">{{ item.url }}</code>
         </div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Attempt Timeline</h2>
-              <p>Each LLM send becomes an immutable attempt block. Hypotheses and replay results stay attached to the attempt that created them.</p>
+        <!-- Metadata Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <div class="bg-white rounded-lg border border-primary/10 p-4">
+                <div class="text-xs font-medium text-muted uppercase mb-1">Original Status</div>
+                <div class="text-lg font-bold {% if item.original_response_status >= 400 %}text-danger{% elif item.original_response_status >= 300 %}text-warning{% else %}text-success{% endif %}">{{ item.original_response_status or '-' }}</div>
             </div>
-          </div>
-          <div id="attempt-timeline">
-            <p class="empty">No attempts stored for this request yet.</p>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>Findings For This Request</h2>
-              <p>Only findings tied to this request are shown here.</p>
+            <div class="bg-white rounded-lg border border-primary/10 p-4">
+                <div class="text-xs font-medium text-muted uppercase mb-1">Latest Attack</div>
+                <div class="text-lg font-bold {% if item.latest_status_code >= 400 %}text-danger{% elif item.latest_status_code >= 300 %}text-warning{% elif item.latest_status_code > 0 %}text-success{% else %}text-muted{% endif %}">{{ item.latest_status_code if item.latest_status_code > 0 else '-' }}</div>
             </div>
-          </div>
-          <div id="request-findings" class="findings-list">
-            {% for finding in findings %}
-            <article class="finding-card">
-              <span class="pill {% if finding.severity|lower in ['high', 'critical'] %}danger{% endif %}">{{ finding.severity }}</span>
-              <h3>{{ finding.title }}</h3>
-              <p class="muted">{{ finding.summary }}</p>
-              <details>
-                <summary>Evidence</summary>
-                <div class="details-body">
-                  <pre>{{ finding.evidence | tojson(indent=2) }}</pre>
-                </div>
-              </details>
-            </article>
-            {% else %}
-            <p class="empty">No findings for this request yet.</p>
-            {% endfor %}
-          </div>
+            <div class="bg-white rounded-lg border border-primary/10 p-4">
+                <div class="text-xs font-medium text-muted uppercase mb-1">Hypotheses</div>
+                <div class="text-lg font-bold text-primary-dark">{{ hypothesis_items | length }}</div>
+            </div>
+            <div class="bg-white rounded-lg border border-primary/10 p-4">
+                <div class="text-xs font-medium text-muted uppercase mb-1">Findings</div>
+                <div class="text-lg font-bold {% if findings %}text-danger{% else %}text-muted{% endif %}">{{ findings | length }}</div>
+            </div>
+            <div class="bg-white rounded-lg border border-primary/10 p-4">
+                <div class="text-xs font-medium text-muted uppercase mb-1">Stage</div>
+                <div class="text-sm font-bold text-primary-dark">{{ item.stage }}</div>
+            </div>
         </div>
-      </section>
-      {% else %}
-      <section class="hero">
-        <h1>Request item not found</h1>
-      </section>
-      {% endif %}
-    </div>
 
-    {% if run and item %}
-    <script>
-      const runId = "{{ run.run_id }}";
-      const requestId = "{{ item.request_id }}";
-      let pollTimer = null;
-      let pollInFlight = false;
-      const detailState = new Map();
-
-      function escapeHtml(value) {
-        return String(value ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#39;");
-      }
-
-      function setText(id, value) {
-        const element = document.getElementById(id);
-        if (element) {
-          element.textContent = value ?? "";
-        }
-      }
-
-      function setPre(id, value, fallback) {
-        const element = document.getElementById(id);
-        if (element) {
-          element.textContent = value || fallback;
-        }
-      }
-
-      function shortText(value, fallback) {
-        if (!value) return fallback;
-        return value.length > 220 ? `${value.slice(0, 220)}...` : value;
-      }
-
-      function captureDetailState(containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.querySelectorAll("details[data-detail-key]").forEach((element) => {
-          detailState.set(element.dataset.detailKey, element.open);
-        });
-      }
-
-      function detailAttr(detailKey, defaultOpen = false) {
-        if (detailState.has(detailKey)) {
-          return detailState.get(detailKey) ? " open" : "";
-        }
-        return defaultOpen ? " open" : "";
-      }
-
-      function renderFindings(findings) {
-        const container = document.getElementById("request-findings");
-        captureDetailState("request-findings");
-        const requestFindings = (findings || []).filter((finding) => finding.request_id === requestId);
-        if (!requestFindings.length) {
-          container.innerHTML = '<p class="empty">No findings for this request yet.</p>';
-          return;
-        }
-        container.innerHTML = requestFindings.map((finding) => `
-          <article class="finding-card">
-            <span class="pill ${(finding.severity || "").toLowerCase().match(/high|critical/) ? "danger" : ""}">${escapeHtml(finding.severity || "unknown")}</span>
-            <h3>${escapeHtml(finding.title || "Untitled finding")}</h3>
-            <p class="muted">${escapeHtml(finding.summary || "")}</p>
-            <details data-detail-key="finding-${escapeHtml(finding.finding_id || finding.title || "untitled")}-evidence"${detailAttr(`finding-${finding.finding_id || finding.title || "untitled"}-evidence`)}>
-              <summary>Evidence</summary>
-              <div class="details-body">
-                <pre>${escapeHtml(JSON.stringify(finding.evidence || [], null, 2))}</pre>
-              </div>
-            </details>
-          </article>
-        `).join("");
-      }
-
-      function renderAttemptTimeline(attemptItems, hypothesisItems) {
-        const container = document.getElementById("attempt-timeline");
-        captureDetailState("attempt-timeline");
-        const requestAttempts = (attemptItems || [])
-          .filter((entry) => entry.request_id === requestId)
-          .sort((a, b) => a.attempt_index - b.attempt_index);
-        const requestHypotheses = (hypothesisItems || [])
-          .filter((entry) => entry.request_id === requestId)
-          .sort((a, b) => (a.attempt_index - b.attempt_index) || (a.sequence_index - b.sequence_index));
-
-        if (!requestAttempts.length) {
-          container.innerHTML = '<p class="empty">No attempts stored for this request yet.</p>';
-          return;
-        }
-
-        container.innerHTML = requestAttempts.map((attempt) => {
-          const hypothesesForAttempt = requestHypotheses.filter((entry) => entry.attempt_index === attempt.attempt_index);
-          const hasError = Boolean(attempt.error);
-          const debugUrl = attempt.debug_artifact_path
-            ? `/runs/${encodeURIComponent(runId)}/requests/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(attempt.attempt_index)}/debug`
-            : "";
-          return `
-            <article class="attempt-card">
-              <div class="attempt-head">
+        <!-- Approval actions -->
+        {% if item.approval_state == 'pending' %}
+        <div class="mb-6 p-4 rounded-xl bg-accent/5 border border-accent/20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-hand text-accent text-xl"></i>
                 <div>
-                  <span class="pill">Attempt ${escapeHtml(attempt.attempt_index)}</span>
-                  <h3 style="margin-top:0.6rem;">${escapeHtml(attempt.stage || "prepared")}</h3>
-                  <p class="attempt-meta">
-                    Status: ${escapeHtml(attempt.status || "pending")}
-                    ${hasError ? ` | Error: ${escapeHtml(attempt.error)}` : ""}
-                  </p>
+                    <p class="font-semibold text-text">Awaiting Approval</p>
+                    <p class="text-sm text-muted">This request needs approval before LLM analysis can proceed.</p>
                 </div>
-                <div class="tag-row">
-                  <span class="tag">Hypotheses ${escapeHtml(hypothesesForAttempt.length)}</span>
-                  ${debugUrl ? `<a class="tag" href="${debugUrl}">Raw provider response</a>` : ""}
+            </div>
+            <div class="flex gap-2">
+                <form method="POST" action="/runs/{{ run.run_id }}/requests/{{ item.request_id }}/approve" style="display:inline">
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-success text-white text-sm font-medium hover:bg-success/90"><i class="fa-solid fa-check mr-1"></i>Approve</button>
+                </form>
+                <form method="POST" action="/runs/{{ run.run_id }}/requests/{{ item.request_id }}/skip" style="display:inline">
+                    <button type="submit" class="px-4 py-2 rounded-lg border border-muted/20 text-muted text-sm font-medium hover:bg-surface"><i class="fa-solid fa-forward mr-1"></i>Skip</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if item.summary %}
+        <div class="mb-6 p-4 rounded-xl bg-surface border border-primary/10">
+            <p class="text-sm text-text"><span class="font-semibold">Summary:</span> {{ item.summary }}</p>
+            {% if item.error %}
+            <p class="text-sm text-danger mt-2"><span class="font-semibold">Error:</span> {{ item.error }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- ==================== SECTION 2: BASELINE ==================== -->
+        <details class="bg-white rounded-xl border border-primary/10 shadow-sm mb-6" {% if not hypothesis_items %}open{% endif %}>
+            <summary class="p-5 flex items-center justify-between hover:bg-surface/50 transition-colors rounded-xl">
+                <h3 class="font-semibold text-text flex items-center gap-2">
+                    <i class="fa-solid fa-file-code text-primary"></i>
+                    Baseline — Original Request & Response
+                    <span class="text-xs font-normal text-muted ml-2">{{ item.method }} {{ item.original_response_status }}</span>
+                </h3>
+                <i class="fa-solid fa-chevron-down text-muted text-xs chevron"></i>
+            </summary>
+            <div class="border-t border-primary/10">
+                <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-primary/10">
+                    <!-- Original Request -->
+                    <div class="p-5 space-y-4">
+                        <h4 class="text-sm font-semibold text-text flex items-center gap-2">
+                            <i class="fa-solid fa-arrow-up text-primary text-xs"></i>Request
+                            <span class="ml-auto flex gap-1">
+                                <button onclick="copyCurlById('baseline')" class="px-2 py-1 rounded text-[10px] font-medium border border-primary/20 text-primary hover:bg-primary/5 transition-colors" title="Copy as cURL"><i class="fa-solid fa-copy mr-1"></i>cURL</button>
+                                <button onclick="openInConsoleById('baseline')" class="px-2 py-1 rounded text-[10px] font-medium border border-accent/20 text-accent hover:bg-accent/5 transition-colors" title="Open in Console"><i class="fa-solid fa-terminal mr-1"></i>Console</button>
+                            </span>
+                        </h4>
+                        <div class="bg-surface rounded-lg p-3">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="method-badge {% if item.method == 'GET' %}method-get{% elif item.method == 'POST' %}method-post{% elif item.method == 'PUT' %}method-put{% elif item.method == 'DELETE' %}method-delete{% elif item.method == 'PATCH' %}method-patch{% endif %}">{{ item.method }}</span>
+                                <code class="text-xs font-mono text-text break-all">{{ item.host }}{{ item.path }}</code>
+                            </div>
+                        </div>
+                        {% if item.request_headers_json and item.request_headers_json != '{}' %}
+                        <details>
+                            <summary class="text-xs font-medium text-muted cursor-pointer hover:text-primary"><i class="fa-solid fa-list mr-1"></i>Headers <i class="fa-solid fa-chevron-down text-[8px] ml-1 chevron"></i></summary>
+                            <pre class="mt-2 text-[11px] font-mono overflow-x-auto max-h-32 overflow-y-auto bg-surface rounded-lg p-3"><code class="language-json">{{ item.request_headers_json | prettyjson }}</code></pre>
+                        </details>
+                        {% endif %}
+                        {% if item.request_body %}
+                        <div>
+                            <p class="text-xs font-medium text-muted mb-2">Body</p>
+                            <pre class="text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto bg-surface rounded-lg p-3"><code class="language-json">{{ item.request_body | prettyjson }}</code></pre>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <!-- Original Response -->
+                    <div class="p-5 space-y-4">
+                        <h4 class="text-sm font-semibold text-text flex items-center gap-2">
+                            <i class="fa-solid fa-arrow-down text-xs {% if item.original_response_status >= 400 %}text-danger{% else %}text-success{% endif %}"></i>
+                            Response
+                            <span class="text-sm font-bold {% if item.original_response_status >= 400 %}text-danger{% elif item.original_response_status >= 300 %}text-warning{% else %}text-success{% endif %}">{{ item.original_response_status }}</span>
+                        </h4>
+                        {% if item.original_response_headers_json and item.original_response_headers_json != '{}' %}
+                        <details>
+                            <summary class="text-xs font-medium text-muted cursor-pointer hover:text-primary"><i class="fa-solid fa-list mr-1"></i>Headers <i class="fa-solid fa-chevron-down text-[8px] ml-1 chevron"></i></summary>
+                            <pre class="mt-2 text-[11px] font-mono overflow-x-auto max-h-32 overflow-y-auto bg-surface rounded-lg p-3"><code class="language-json">{{ item.original_response_headers_json | prettyjson }}</code></pre>
+                        </details>
+                        {% endif %}
+                        <div>
+                            <p class="text-xs font-medium text-muted mb-2">Body</p>
+                            <pre class="text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto bg-surface rounded-lg p-3"><code class="language-json">{{ (item.original_response_body or '(empty)') | prettyjson }}</code></pre>
+                        </div>
+                    </div>
                 </div>
-              </div>
+            </div>
+        </details>
 
-                <div class="details-grid">
-                <details data-detail-key="attempt-${escapeHtml(attempt.attempt_index)}-request"${detailAttr(`attempt-${attempt.attempt_index}-request`)}>
-                  <summary>LLM request preview</summary>
-                  <div class="details-body">
-                    <pre>${escapeHtml(attempt.llm_request_json || "{}")}</pre>
-                  </div>
-                </details>
-                <details data-detail-key="attempt-${escapeHtml(attempt.attempt_index)}-parsed-response"${detailAttr(`attempt-${attempt.attempt_index}-parsed-response`, Boolean(attempt.llm_response_message_content))}>
-                  <summary>LLM parsed response</summary>
-                  <div class="details-body">
-                    <pre>${escapeHtml(attempt.llm_response_message_content || "[No parsed LLM response yet]")}</pre>
-                  </div>
-                </details>
-                <details data-detail-key="attempt-${escapeHtml(attempt.attempt_index)}-raw-response"${detailAttr(`attempt-${attempt.attempt_index}-raw-response`)}>
-                  <summary>Raw provider response</summary>
-                  <div class="details-body">
-                    <pre>${escapeHtml(attempt.llm_response_text || "[No provider response yet]")}</pre>
-                  </div>
-                </details>
-              </div>
+        <!-- ==================== SECTION 3: HYPOTHESES DEEP-DIVE ==================== -->
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-primary-dark flex items-center gap-2">
+                    <i class="fa-solid fa-flask text-primary"></i>
+                    Tested Hypotheses
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">{{ hypothesis_items | length }}</span>
+                </h3>
+                {% if hypothesis_items %}
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleAllDetails(true)" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-primary/20 text-primary hover:bg-primary/5 transition-colors">
+                        <i class="fa-solid fa-expand mr-1"></i>Expand All
+                    </button>
+                    <button onclick="toggleAllDetails(false)" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-primary/20 text-muted hover:bg-surface transition-colors">
+                        <i class="fa-solid fa-compress mr-1"></i>Collapse All
+                    </button>
+                </div>
+                {% endif %}
+            </div>
 
-              <div class="details-grid" style="margin-top:1rem;">
-                ${hypothesesForAttempt.length ? hypothesesForAttempt.map((hypothesis) => `
-                  <article class="hypothesis-card">
-                    <div class="hypothesis-head">
-                      <div>
-                        <span class="pill ${(hypothesis.severity || "").toLowerCase().match(/high|critical/) ? "danger" : ""}">
-                          Hypothesis ${escapeHtml(hypothesis.sequence_index)} · ${escapeHtml(hypothesis.attack_type || "unknown")}
-                        </span>
-                        <h3 style="margin-top:0.6rem;">${escapeHtml(hypothesis.mutation_summary || hypothesis.rationale || "No summary")}</h3>
-                        <p class="hypothesis-meta">
-                          Status: ${escapeHtml(hypothesis.status || "generated")} | Stage: ${escapeHtml(hypothesis.stage || "generated")}
-                          | Outcome: ${escapeHtml(hypothesis.execution_outcome || "pending")}
-                        </p>
-                      </div>
-                      <div class="tag-row">
-                        <span class="tag">Severity ${escapeHtml(hypothesis.severity || "unknown")}</span>
-                        <span class="tag">Findings ${escapeHtml(hypothesis.findings_count || 0)}</span>
-                        ${hypothesis.response_status_code ? `<span class="tag">HTTP ${escapeHtml(hypothesis.response_status_code)}</span>` : ""}
-                      </div>
-                    </div>
-
-                    <p class="muted" style="margin-top:0.7rem;">Expected signal: ${escapeHtml(hypothesis.expected_signal || "n/a")}</p>
-
-                    <div class="details-grid">
-                      <details data-detail-key="attempt-${escapeHtml(hypothesis.attempt_index)}-hypothesis-${escapeHtml(hypothesis.hypothesis_id)}-mutation"${detailAttr(`attempt-${hypothesis.attempt_index}-hypothesis-${hypothesis.hypothesis_id}-mutation`)}>
-                        <summary>Mutation request</summary>
-                        <div class="details-body">
-                          <pre>${escapeHtml(JSON.stringify({
-                            method: hypothesis.method,
-                            url: hypothesis.url,
-                            headers_json: hypothesis.headers_json,
-                            body: hypothesis.body,
-                          }, null, 2))}</pre>
+            {% if hypothesis_items %}
+            <div class="space-y-4" id="hypothesis-list">
+                {% for hyp in hypothesis_items %}
+                <details id="hyp-{{ hyp.hypothesis_id }}" class="hyp-detail bg-white rounded-xl border border-primary/10 shadow-sm overflow-hidden hyp-card-{{ hyp.execution_outcome or 'pending' }}"
+                         {% if hyp.execution_outcome == 'vulnerable' %}open{% endif %}>
+                    <!-- Card Header (always visible) -->
+                    <summary class="p-4 hover:bg-surface/30 transition-colors">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2 flex-wrap flex-1">
+                                <span class="px-2 py-0.5 rounded text-xs font-medium
+                                    {% if hyp.severity == 'critical' %}severity-critical{% elif hyp.severity == 'high' %}severity-high{% elif hyp.severity == 'medium' %}severity-medium{% elif hyp.severity == 'low' %}severity-low{% else %}severity-info{% endif %}">
+                                    {{ hyp.severity | upper }}
+                                </span>
+                                <span class="font-semibold text-text text-sm">{{ hyp.attack_type }}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-medium
+                                    {% if hyp.execution_outcome == 'vulnerable' %}bg-danger/10 text-danger
+                                    {% elif hyp.execution_outcome == 'ok' or hyp.execution_outcome == 'not_vulnerable' or hyp.execution_outcome == 'safe' %}bg-success/10 text-success
+                                    {% elif hyp.execution_outcome == 'http_error' or hyp.execution_outcome == 'transport_error' %}bg-warning/10 text-warning
+                                    {% elif hyp.execution_outcome %}bg-muted/10 text-muted
+                                    {% else %}bg-primary/10 text-primary{% endif %}">
+                                    {% if hyp.execution_outcome %}{{ hyp.execution_outcome }}{% else %}{{ hyp.status }}{% endif %}
+                                </span>
+                                {% if hyp.response_status_code > 0 %}
+                                <span class="text-xs font-mono {% if hyp.response_status_code >= 400 %}text-warning{% else %}text-success{% endif %}">({{ hyp.response_status_code }})</span>
+                                {% endif %}
+                                {% if hyp.findings_count > 0 %}
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-danger/10 text-danger"><i class="fa-solid fa-bug mr-0.5"></i>{{ hyp.findings_count }}</span>
+                                {% endif %}
+                                {% if hyp.stage == 'validated' %}
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-danger/10 text-danger"><i class="fa-solid fa-check-double mr-0.5"></i>confirmed</span>
+                                {% elif hyp.stage == 'false_positive' %}
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted/10 text-muted"><i class="fa-solid fa-xmark mr-0.5"></i>false positive</span>
+                                {% endif %}
+                            </div>
+                            <button onclick="event.preventDefault(); event.stopPropagation(); openNoteEditor('{{ run.run_id }}', '{{ item.request_id }}', '{{ hyp.hypothesis_id }}')"
+                                    class="w-8 h-8 rounded-lg flex items-center justify-center text-muted/40 hover:text-accent hover:bg-accent/10 transition-colors ml-2 flex-shrink-0" title="Add note">
+                                <i class="fa-solid fa-note-sticky text-sm"></i>
+                            </button>
+                            <i class="fa-solid fa-chevron-down text-muted text-xs chevron ml-1"></i>
                         </div>
-                      </details>
-                      <details data-detail-key="attempt-${escapeHtml(hypothesis.attempt_index)}-hypothesis-${escapeHtml(hypothesis.hypothesis_id)}-replay"${detailAttr(`attempt-${hypothesis.attempt_index}-hypothesis-${hypothesis.hypothesis_id}-replay`, Boolean(hypothesis.response_status_code || hypothesis.execution_error || hypothesis.response_body))}>
-                        <summary>Replay result</summary>
-                        <div class="details-body">
-                          <pre>${escapeHtml(JSON.stringify({
-                            response_status_code: hypothesis.response_status_code,
-                            response_headers_json: hypothesis.response_headers_json,
-                            response_body: hypothesis.response_body,
-                            execution_error: hypothesis.execution_error,
-                            findings_count: hypothesis.findings_count,
-                          }, null, 2))}</pre>
+                        <p class="text-sm text-text mt-2">{{ hyp.mutation_summary }}</p>
+                    </summary>
+
+                    <!-- Card Body: 5-step Timeline -->
+                    <div class="border-t border-primary/10 p-5">
+                        <div class="space-y-0">
+
+                            <!-- ① HYPOTHESIS -->
+                            <div class="relative pl-10 pb-5">
+                                <div class="absolute left-0 top-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">1</div>
+                                <div class="absolute left-[13px] top-7 w-0.5 h-[calc(100%-28px)] bg-primary/20"></div>
+                                <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-2">Hypothesis</p>
+                                {% if hyp.rationale %}
+                                <p class="text-sm text-text">{{ hyp.rationale }}</p>
+                                {% endif %}
+                                {% if hyp.expected_signal %}
+                                <p class="text-sm text-muted mt-1"><span class="font-medium text-text">Expected Signal:</span> {{ hyp.expected_signal }}</p>
+                                {% endif %}
+                            </div>
+
+                            <!-- ② REQUEST SENT -->
+                            <div class="relative pl-10 pb-5">
+                                <div class="absolute left-0 top-0 w-7 h-7 rounded-full bg-accent flex items-center justify-center text-white text-xs font-bold">2</div>
+                                <div class="absolute left-[13px] top-7 w-0.5 h-[calc(100%-28px)] bg-primary/20"></div>
+                                <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-2 flex items-center gap-2">Request Sent
+                                    {% if hyp.url %}
+                                    <span class="ml-auto flex gap-1">
+                                        <button onclick="copyCurlById('{{ hyp.hypothesis_id }}')" class="px-2 py-1 rounded text-[10px] font-medium border border-primary/20 text-primary hover:bg-primary/5 transition-colors" title="Copy as cURL"><i class="fa-solid fa-copy mr-1"></i>cURL</button>
+                                        <button onclick="openInConsoleById('{{ hyp.hypothesis_id }}')" class="px-2 py-1 rounded text-[10px] font-medium border border-accent/20 text-accent hover:bg-accent/5 transition-colors" title="Open in Console"><i class="fa-solid fa-terminal mr-1"></i>Console</button>
+                                    </span>
+                                    {% endif %}
+                                </p>
+                                {% if hyp.url %}
+                                <div class="bg-surface rounded-lg border border-primary/10 overflow-hidden">
+                                    <div class="px-3 py-2 bg-white border-b border-primary/5 flex items-center gap-2">
+                                        <span class="method-badge {% if hyp.method == 'GET' %}method-get{% elif hyp.method == 'POST' %}method-post{% elif hyp.method == 'PUT' %}method-put{% elif hyp.method == 'DELETE' %}method-delete{% elif hyp.method == 'PATCH' %}method-patch{% endif %}">{{ hyp.method or item.method }}</span>
+                                        <code class="text-xs font-mono text-text break-all">{{ hyp.url }}</code>
+                                    </div>
+                                    {% if hyp.headers_json and hyp.headers_json != '{}' %}
+                                    <details class="border-b border-primary/5">
+                                        <summary class="px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-white"><i class="fa-solid fa-list mr-1"></i>Headers <i class="fa-solid fa-chevron-down text-[8px] ml-1 chevron"></i></summary>
+                                        <pre class="px-3 py-2 text-[11px] font-mono overflow-x-auto max-h-32 overflow-y-auto"><code class="language-json">{{ hyp.headers_json | prettyjson }}</code></pre>
+                                    </details>
+                                    {% endif %}
+                                    {% if hyp.body %}
+                                    <div class="px-3 py-2">
+                                        <p class="text-xs font-medium text-muted mb-1">Body</p>
+                                        <pre class="text-[11px] font-mono overflow-x-auto max-h-48 overflow-y-auto bg-white rounded p-2"><code class="language-json">{{ hyp.body | prettyjson }}</code></pre>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% else %}
+                                <p class="text-sm text-muted">No request data recorded</p>
+                                {% endif %}
+                            </div>
+
+                            <!-- ③ RESPONSE RECEIVED -->
+                            <div class="relative pl-10 pb-5">
+                                <div class="absolute left-0 top-0 w-7 h-7 rounded-full {% if hyp.response_status_code >= 400 %}bg-warning{% elif hyp.response_status_code > 0 %}bg-success{% else %}bg-muted{% endif %} flex items-center justify-center text-white text-xs font-bold">3</div>
+                                <div class="absolute left-[13px] top-7 w-0.5 h-[calc(100%-28px)] bg-primary/20"></div>
+                                <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-2">Response Received</p>
+                                {% if hyp.response_status_code > 0 %}
+                                <div class="bg-surface rounded-lg border border-primary/10 overflow-hidden">
+                                    <div class="px-3 py-2 border-b border-primary/5 flex items-center gap-2
+                                        {% if hyp.response_status_code >= 500 %}bg-danger/5{% elif hyp.response_status_code >= 400 %}bg-warning/5{% else %}bg-success/5{% endif %}">
+                                        <span class="text-lg font-bold {% if hyp.response_status_code >= 500 %}text-danger{% elif hyp.response_status_code >= 400 %}text-warning{% else %}text-success{% endif %}">{{ hyp.response_status_code }}</span>
+                                        <span class="text-xs text-muted">{% if hyp.response_status_code == 200 %}OK{% elif hyp.response_status_code == 400 %}Bad Request{% elif hyp.response_status_code == 401 %}Unauthorized{% elif hyp.response_status_code == 403 %}Forbidden{% elif hyp.response_status_code == 404 %}Not Found{% elif hyp.response_status_code >= 500 %}Server Error{% endif %}</span>
+                                    </div>
+                                    {% if hyp.response_headers_json and hyp.response_headers_json != '{}' %}
+                                    <details class="border-b border-primary/5">
+                                        <summary class="px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-white"><i class="fa-solid fa-list mr-1"></i>Headers <i class="fa-solid fa-chevron-down text-[8px] ml-1 chevron"></i></summary>
+                                        <pre class="px-3 py-2 text-[11px] font-mono overflow-x-auto max-h-32 overflow-y-auto"><code class="language-json">{{ hyp.response_headers_json | prettyjson }}</code></pre>
+                                    </details>
+                                    {% endif %}
+                                    {% if hyp.response_body %}
+                                    <div class="px-3 py-2">
+                                        <p class="text-xs font-medium text-muted mb-1">Body</p>
+                                        <pre class="text-[11px] font-mono overflow-x-auto max-h-64 overflow-y-auto bg-white rounded p-2"><code class="language-json">{{ hyp.response_body | prettyjson }}</code></pre>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% elif hyp.execution_error %}
+                                <div class="p-3 rounded-lg bg-warning/5 border border-warning/20">
+                                    <p class="text-sm text-warning"><i class="fa-solid fa-triangle-exclamation mr-1"></i>{{ hyp.execution_error }}</p>
+                                </div>
+                                {% else %}
+                                <p class="text-sm text-muted">No response received</p>
+                                {% endif %}
+                            </div>
+
+                            <!-- ④ LLM REVIEW -->
+                            <div class="relative pl-10 pb-5">
+                                <div class="absolute left-0 top-0 w-7 h-7 rounded-full bg-primary/80 flex items-center justify-center text-white text-xs font-bold">4</div>
+                                <div class="absolute left-[13px] top-7 w-0.5 h-[calc(100%-28px)] bg-primary/20"></div>
+                                <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-2">LLM Review</p>
+                                {% set validation = hyp.llm_validation_json %}
+                                {% if validation %}
+                                    {% set val_data = validation | tojson %}
+                                    {% for v in (validation if validation is string and validation.startswith('[')) | default([]) %}{% endfor %}
+                                {% endif %}
+                                <div class="space-y-2" id="llm-review-{{ hyp.hypothesis_id }}">
+                                    <script>
+                                    (function() {
+                                        try {
+                                            var raw = {{ hyp.llm_validation_json | tojson }};
+                                            var container = document.getElementById('llm-review-{{ hyp.hypothesis_id }}');
+                                            if (!raw || raw === '') {
+                                                container.innerHTML = '<p class="text-sm text-muted"><i class="fa-solid fa-circle-info mr-1"></i>Heuristic evaluation only — no LLM validation ran for this hypothesis</p>';
+                                                return;
+                                            }
+                                            var items = JSON.parse(raw);
+                                            if (!Array.isArray(items)) items = [items];
+                                            var html = '';
+                                            items.forEach(function(v) {
+                                                var isReal = v.is_real_vulnerability === true;
+                                                var cls = isReal ? 'bg-danger/5 border-danger/20 text-danger' : 'bg-success/5 border-success/20 text-success';
+                                                var icon = isReal ? 'fa-bug' : 'fa-shield-halved';
+                                                var label = isReal ? 'Confirmed Vulnerability' : 'False Positive';
+                                                html += '<div class="p-3 rounded-lg border ' + cls + '">' +
+                                                    '<div class="flex items-center gap-2 mb-1">' +
+                                                    '<i class="fa-solid ' + icon + '"></i>' +
+                                                    '<span class="text-sm font-bold">' + label + '</span>' +
+                                                    (v.severity && isReal ? ' <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/50">' + v.severity.toUpperCase() + '</span>' : '') +
+                                                    (v.category && v.category !== 'false_positive' ? ' <span class="text-xs text-muted">' + v.category + '</span>' : '') +
+                                                    '</div>' +
+                                                    (v.reasoning ? '<p class="text-sm mt-1">' + v.reasoning + '</p>' : '') +
+                                                    '</div>';
+                                            });
+                                            container.innerHTML = html;
+                                        } catch(e) {
+                                            var container = document.getElementById('llm-review-{{ hyp.hypothesis_id }}');
+                                            container.innerHTML = '<p class="text-sm text-muted"><i class="fa-solid fa-circle-info mr-1"></i>Heuristic evaluation only</p>';
+                                        }
+                                    })();
+                                    </script>
+                                </div>
+                            </div>
+
+                            <!-- ⑤ VERDICT & FINDINGS -->
+                            <div class="relative pl-10">
+                                <div class="absolute left-0 top-0 w-7 h-7 rounded-full
+                                    {% if hyp.execution_outcome == 'vulnerable' or hyp.stage == 'validated' %}bg-danger
+                                    {% elif hyp.execution_outcome in ('transport_error', 'http_error') %}bg-warning
+                                    {% elif hyp.stage == 'false_positive' %}bg-muted
+                                    {% else %}bg-success{% endif %}
+                                    flex items-center justify-center text-white text-xs font-bold">5</div>
+                                <p class="text-xs font-semibold text-primary uppercase tracking-wider mb-2">Verdict & Findings</p>
+
+                                {% if hyp.execution_outcome %}
+                                <div class="p-3 rounded-lg mb-3
+                                    {% if hyp.execution_outcome == 'vulnerable' or hyp.stage == 'validated' %}bg-danger/5 border border-danger/20
+                                    {% elif hyp.execution_outcome in ('transport_error', 'http_error') %}bg-warning/5 border border-warning/20
+                                    {% elif hyp.stage == 'false_positive' %}bg-muted/5 border border-muted/20
+                                    {% else %}bg-success/5 border border-success/20{% endif %}">
+                                    <div class="flex items-center gap-3">
+                                        {% if hyp.execution_outcome == 'vulnerable' or hyp.stage == 'validated' %}
+                                        <i class="fa-solid fa-bug text-danger text-lg"></i>
+                                        <span class="text-sm font-bold text-danger">VULNERABLE</span>
+                                        {% elif hyp.stage == 'false_positive' %}
+                                        <i class="fa-solid fa-shield-halved text-muted text-lg"></i>
+                                        <span class="text-sm font-bold text-muted">FALSE POSITIVE (filtered by LLM)</span>
+                                        {% elif hyp.execution_outcome in ('transport_error', 'http_error') %}
+                                        <i class="fa-solid fa-triangle-exclamation text-warning text-lg"></i>
+                                        <span class="text-sm font-bold text-warning">{{ hyp.execution_outcome | upper }}</span>
+                                        {% else %}
+                                        <i class="fa-solid fa-shield-halved text-success text-lg"></i>
+                                        <span class="text-sm font-bold text-success">{{ hyp.execution_outcome | upper }}</span>
+                                        {% endif %}
+                                        {% if hyp.execution_error %}
+                                        <span class="text-xs text-muted">{{ hyp.execution_error }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endif %}
+
+                                <!-- Inline findings for this hypothesis -->
+                                {% set hyp_findings = findings_by_hyp.get(hyp.hypothesis_id, []) %}
+                                {% if hyp_findings %}
+                                <div class="space-y-2">
+                                    {% for f in hyp_findings %}
+                                    <div class="p-3 rounded-lg border {% if f.severity == 'critical' %}border-danger/30 bg-danger/5{% elif f.severity == 'high' %}border-warning/30 bg-warning/5{% else %}border-primary/10 bg-surface{% endif %}">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-medium {% if f.severity == 'critical' %}severity-critical{% elif f.severity == 'high' %}severity-high{% elif f.severity == 'medium' %}severity-medium{% elif f.severity == 'low' %}severity-low{% else %}severity-info{% endif %}">{{ (f.severity or 'info') | upper }}</span>
+                                            <span class="text-sm font-semibold text-text">{{ f.title }}</span>
+                                        </div>
+                                        {% if f.summary %}
+                                        <p class="text-xs text-muted">{{ f.summary }}</p>
+                                        {% endif %}
+                                        {% if f.remediation %}
+                                        <p class="text-xs text-primary mt-1"><i class="fa-solid fa-wrench mr-1"></i>{{ f.remediation }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% elif hyp.findings_count == 0 and hyp.stage not in ('generated', '') %}
+                                <p class="text-xs text-muted">No confirmed findings for this hypothesis.</p>
+                                {% endif %}
+                            </div>
+
                         </div>
-                      </details>
                     </div>
-                  </article>
-                `).join("") : '<p class="empty">No hypotheses stored for this attempt yet.</p>'}
-              </div>
-            </article>
-          `;
-        }).join("");
-      }
+                </details>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bg-white rounded-xl border border-primary/10 shadow-sm p-8 text-center">
+                <i class="fa-solid fa-flask text-3xl text-muted/30 mb-3"></i>
+                <p class="text-sm text-muted">No hypotheses generated for this endpoint</p>
+                <p class="text-xs text-muted mt-1">{{ item.summary or 'The LLM did not generate attack hypotheses for this request' }}</p>
+            </div>
+            {% endif %}
+        </div>
 
-      function renderItem(item, attemptItems, hypothesisItems) {
-        if (!item) return;
-        setText("item-title", `${item.method || ""} ${item.path || ""}`.trim());
-        setText("item-summary", item.summary || "");
-        setText("item-stage", item.stage || "");
-        setText("item-request-id", item.request_id || "");
-        setText("item-counts", `${item.hypothesis_count ?? 0} / ${item.executed_count ?? 0}`);
-        setText("item-findings", item.findings_count ?? 0);
-        setText("item-status", item.status || "unknown");
-        setText("item-approval-badge", item.approval_state || "");
-        setText("request-headline", `${item.method || ""} ${item.url || ""}`.trim());
-        setText("request-snippet", shortText(item.request_body, "No request body."));
-        setText("original-response-headline", `Status ${item.original_response_status || 0}`);
-        setText("original-response-snippet", shortText(item.original_response_body, "No baseline response body."));
-        setPre("request-headers", item.request_headers_json, "{}");
-        setPre("request-body", item.request_body, "[No Body]");
-        setPre("original-response-headers", item.original_response_headers_json, "{}");
-        setPre("original-response-body", item.original_response_body, "[No Body]");
-        const attemptsForRequest = (attemptItems || []).filter((entry) => entry.request_id === requestId);
-        setText("item-attempt-count", attemptsForRequest.length);
+        <!-- ==================== SECTION 4: FINDINGS ==================== -->
+        {% if findings %}
+        <div class="mb-6">
+            <h3 class="text-lg font-bold text-primary-dark flex items-center gap-2 mb-4">
+                <i class="fa-solid fa-bug text-danger"></i>
+                Findings
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-danger/10 text-danger">{{ findings | length }}</span>
+            </h3>
+            <div class="space-y-4">
+                {% for finding in findings %}
+                <div class="bg-white rounded-xl border p-5 {% if finding.severity == 'critical' %}border-danger/30{% elif finding.severity == 'high' %}border-warning/30{% else %}border-primary/10{% endif %}">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            <span class="px-3 py-1 rounded text-sm font-medium {% if finding.severity == 'critical' %}severity-critical{% elif finding.severity == 'high' %}severity-high{% elif finding.severity == 'medium' %}severity-medium{% elif finding.severity == 'low' %}severity-low{% else %}severity-info{% endif %}">
+                                {{ (finding.severity or 'info') | capitalize }}
+                            </span>
+                            <h4 class="font-semibold text-text">{{ finding.title or 'Finding' }}</h4>
+                        </div>
+                    </div>
+                    {% if finding.description %}
+                    <p class="text-sm text-muted mb-3">{{ finding.description }}</p>
+                    {% endif %}
+                    {% if finding.endpoint %}
+                    <p class="text-xs text-muted mb-2">Endpoint: <code class="font-mono text-primary bg-primary/5 px-1.5 py-0.5 rounded">{{ finding.endpoint }}</code></p>
+                    {% endif %}
+                    {% if finding.remediation %}
+                    <div class="mt-3 p-3 rounded-lg bg-accent/5 border border-accent/20">
+                        <p class="text-xs font-semibold text-accent mb-1"><i class="fa-solid fa-wrench mr-1"></i>Remediation</p>
+                        <p class="text-sm text-text">{{ finding.remediation }}</p>
+                    </div>
+                    {% endif %}
+                    {% if finding.reproduction_curl %}
+                    <details class="mt-3">
+                        <summary class="text-xs font-medium text-primary cursor-pointer hover:underline"><i class="fa-solid fa-terminal mr-1"></i>Reproduction cURL</summary>
+                        <pre class="mt-2 text-[11px] font-mono bg-gray-900 text-green-400 p-3 rounded-lg overflow-x-auto">{{ finding.reproduction_curl }}</pre>
+                    </details>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
-        const error = document.getElementById("item-error");
-        if (error) {
-          if (item.error) {
-            error.textContent = item.error;
-            error.classList.remove("hidden");
-          } else {
-            error.textContent = "";
-            error.classList.add("hidden");
-          }
-        }
+        <!-- ==================== SECTION 5: LLM ANALYSIS (collapsible debug) ==================== -->
+        {% if parsed_attempts %}
+        <details class="bg-white rounded-xl border border-primary/10 shadow-sm mb-6 overflow-hidden">
+            <summary class="p-5 flex items-center justify-between hover:bg-surface/30 transition-colors">
+                <h3 class="font-semibold text-text flex items-center gap-2">
+                    <i class="fa-solid fa-brain text-primary"></i>
+                    LLM Analysis
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">{{ parsed_attempts | length }} attempt{{ 's' if parsed_attempts | length != 1 }}</span>
+                </h3>
+                <i class="fa-solid fa-chevron-down text-muted text-xs chevron"></i>
+            </summary>
+            <div class="border-t border-primary/10 p-5 space-y-4">
+                {% for pa in parsed_attempts %}
+                {% set attempt = pa.attempt %}
+                <div class="bg-surface rounded-lg border border-primary/10 overflow-hidden">
+                    <div class="p-4 flex items-center gap-3 border-b border-primary/5">
+                        <h4 class="font-semibold text-text">Attempt #{{ attempt.attempt_index }}</h4>
+                        {% if attempt.status == 'completed' %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">Completed</span>
+                        {% elif attempt.status == 'error' %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger">Error</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning">{{ attempt.status }}</span>
+                        {% endif %}
+                        {% if pa.model_verdict %}
+                        <span class="text-xs text-muted">{{ pa.model_verdict }}</span>
+                        {% endif %}
+                    </div>
+                    {% if attempt.error %}
+                    <div class="p-3 bg-danger/5"><p class="text-sm text-danger"><i class="fa-solid fa-exclamation-triangle mr-1"></i>{{ attempt.error }}</p></div>
+                    {% endif %}
+                    {% if pa.is_echo %}
+                    <div class="p-3 bg-warning/5"><p class="text-xs text-warning">Model echoed the prompt back — no hypotheses generated for this endpoint.</p></div>
+                    {% endif %}
+                    {% if attempt.llm_request_json and attempt.llm_request_json != '{}' %}
+                    <details class="border-t border-primary/5">
+                        <summary class="p-3 text-xs font-medium text-muted cursor-pointer hover:bg-white"><i class="fa-solid fa-arrow-up mr-1"></i>Prompt Sent</summary>
+                        <pre class="p-3 text-[11px] font-mono overflow-x-auto max-h-48 overflow-y-auto"><code class="language-json">{{ attempt.llm_request_json }}</code></pre>
+                    </details>
+                    {% endif %}
+                    {% if pa.raw_reasoning %}
+                    <details class="border-t border-primary/5">
+                        <summary class="p-3 text-xs font-medium text-muted cursor-pointer hover:bg-white"><i class="fa-solid fa-arrow-down mr-1"></i>Model Response</summary>
+                        <pre class="p-3 text-[11px] font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap"><code>{{ pa.raw_reasoning }}</code></pre>
+                    </details>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
 
-        const approvalActions = document.getElementById("approval-actions");
-        if (approvalActions) {
-          approvalActions.classList.toggle("hidden", item.approval_state !== "pending");
-        }
+        <!-- Debug artifact link -->
+        {% if item.debug_artifact_path %}
+        <div class="mb-6 text-center">
+            <a href="/runs/{{ run.run_id }}/debug/{{ item.request_id }}" target="_blank" class="text-xs text-muted hover:text-primary"><i class="fa-solid fa-file-code mr-1"></i>View Debug Artifact</a>
+        </div>
+        {% endif %}
 
-        const latestDebugLink = document.getElementById("latest-debug-link");
-        if (latestDebugLink) {
-          if (item.debug_artifact_path) {
-            latestDebugLink.classList.remove("hidden");
-            latestDebugLink.href = `/runs/${encodeURIComponent(runId)}/debug/${encodeURIComponent(requestId)}`;
-          } else {
-            latestDebugLink.classList.add("hidden");
-          }
-        }
-      }
+        {% else %}
+        <!-- No item found -->
+        <div class="flex items-center justify-center h-96">
+            <div class="text-center">
+                <i class="fa-solid fa-inbox text-6xl text-muted/30 mb-4"></i>
+                <p class="text-muted text-lg">Request not found</p>
+                <a href="/runs/{{ run.run_id }}" class="mt-4 inline-block px-4 py-2 rounded-lg bg-primary text-white text-sm">Back to Run</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
 
-      function schedulePoll(delayMs) {
-        if (pollTimer) {
-          window.clearTimeout(pollTimer);
-        }
-        pollTimer = window.setTimeout(pollRequest, delayMs);
-      }
-
-      async function pollRequest() {
-        if (pollInFlight) {
-          return;
-        }
-        pollInFlight = true;
-        try {
-          const response = await fetch(`/runs/${encodeURIComponent(runId)}/snapshot`, { cache: "no-store" });
-          if (!response.ok) {
-            schedulePoll(3000);
-            return;
-          }
-          const data = await response.json();
-          const item = (data.request_items || []).find((entry) => entry.request_id === requestId);
-          renderItem(item, data.llm_attempt_items || [], data.hypothesis_items || []);
-          renderAttemptTimeline(data.llm_attempt_items || [], data.hypothesis_items || []);
-          renderFindings(data.findings || []);
-          const runStatus = data.run ? data.run.status : "";
-          const shouldContinue =
-            (item && (
-              ["queued", "running", "awaiting_approval", "paused"].includes(item.status) ||
-              item.approval_state === "pending"
-            )) ||
-            ["running", "paused", "cancel_requested", "awaiting_approval"].includes(runStatus);
-          if (shouldContinue) {
-            schedulePoll(2000);
-          }
-        } catch (_error) {
-          schedulePoll(3000);
-        } finally {
-          pollInFlight = false;
-        }
-      }
-
-      window.addEventListener("focus", () => pollRequest());
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-          pollRequest();
-        }
-      });
-
-      pollRequest();
-    </script>
+<script>
+    // ---- Request data registry (populated from Jinja, safe from attribute-escaping issues) ----
+    var _requestData = {};
+    {% if item %}
+    _requestData['baseline'] = {
+        method: {{ item.method | tojson }},
+        url: {{ item.url | tojson }},
+        headers_json: {{ item.request_headers_json | tojson }},
+        body: {{ item.request_body | tojson }}
+    };
     {% endif %}
-  </body>
-</html>
+    {% for hyp in hypothesis_items %}
+    {% if hyp.url %}
+    _requestData[{{ hyp.hypothesis_id | tojson }}] = {
+        method: {{ (hyp.method or item.method) | tojson }},
+        url: {{ hyp.url | tojson }},
+        headers_json: {{ hyp.headers_json | tojson }},
+        body: {{ hyp.body | tojson }}
+    };
+    {% endif %}
+    {% endfor %}
+
+    function _parseHeaders(headersJson) {
+        if (!headersJson) return {};
+        try { return typeof headersJson === 'string' ? JSON.parse(headersJson) : headersJson; } catch(e) { return {}; }
+    }
+
+    function buildCurl(method, url, headersJson, body) {
+        var parts = ['curl'];
+        if (method && method !== 'GET') parts.push('-X ' + method);
+        var headers = _parseHeaders(headersJson);
+        Object.keys(headers).forEach(function(k) {
+            parts.push("-H '" + k + ': ' + String(headers[k]).replace(/'/g, "'\\''") + "'");
+        });
+        if (body) {
+            var bodyStr = typeof body === 'object' ? JSON.stringify(body) : String(body);
+            if (bodyStr && bodyStr !== 'null') {
+                parts.push("-d '" + bodyStr.replace(/'/g, "'\\''") + "'");
+            }
+        }
+        parts.push("'" + url + "'");
+        return parts.join(' \\\n  ');
+    }
+
+    function copyCurlById(id) {
+        var d = _requestData[id];
+        if (!d) return;
+        var cmd = buildCurl(d.method, d.url, d.headers_json, d.body);
+        navigator.clipboard.writeText(cmd).then(function() {
+            var toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-primary text-white px-4 py-2 rounded-lg text-sm shadow-lg z-[60]';
+            toast.textContent = 'cURL copied to clipboard!';
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 2000);
+        });
+    }
+
+    function openInConsoleById(id) {
+        var d = _requestData[id];
+        if (!d) return;
+        var headers = _parseHeaders(d.headers_json);
+        var bodyStr = '';
+        if (d.body) {
+            bodyStr = typeof d.body === 'object' ? JSON.stringify(d.body, null, 2) : String(d.body);
+            if (bodyStr === 'null') bodyStr = '';
+        }
+        if (typeof window.openConsolePanel === 'function') {
+            window.openConsolePanel(d.method || 'GET', d.url || '', headers, bodyStr);
+        }
+    }
+
+    // Note editor
+    function openNoteEditor(runId, requestId, hypothesisId) {
+        var url = '/api/notes?run_id=' + runId;
+        if (requestId) url += '&request_id=' + requestId;
+        if (hypothesisId) url += '&hypothesis_id=' + hypothesisId;
+        fetch(url).then(function(r) { return r.json(); }).then(function(notes) {
+            var existing = notes.length > 0 ? notes[0] : null;
+            var modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6';
+            modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+            modal.id = 'note-modal';
+            modal.innerHTML = '<div class="bg-white rounded-xl shadow-2xl max-w-lg w-full">' +
+                '<div class="p-4 border-b border-primary/10 flex items-center justify-between">' +
+                '<h3 class="font-semibold text-text text-sm"><i class="fa-solid fa-note-sticky mr-2 text-accent"></i>' + (existing ? 'Edit Note' : 'Add Note') + '</h3>' +
+                '<button onclick="document.getElementById(\'note-modal\').remove()" class="text-muted hover:text-primary"><i class="fa-solid fa-xmark"></i></button></div>' +
+                '<div class="p-4"><textarea id="note-content" class="w-full h-32 px-3 py-2 border border-primary/20 rounded-lg text-sm focus:outline-none focus:border-primary resize-none" placeholder="Add your notes...">' + (existing ? existing.content : '') + '</textarea>' +
+                '<div class="flex items-center justify-between mt-3"><div>' +
+                (existing ? '<button onclick="fetch(\'/api/notes/' + existing.note_id + '\',{method:\'DELETE\'}).then(function(){location.reload();})" class="text-xs text-danger hover:underline">Delete</button>' : '') +
+                '</div><div class="flex gap-2">' +
+                '<button onclick="document.getElementById(\'note-modal\').remove()" class="px-3 py-1.5 rounded-lg text-xs font-medium text-muted border border-primary/20">Cancel</button>' +
+                '<button onclick="saveNote(\'' + runId + '\',\'' + requestId + '\',\'' + hypothesisId + '\',\'' + (existing ? existing.note_id : '') + '\')" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-dark">Save</button>' +
+                '</div></div></div></div>';
+            document.body.appendChild(modal);
+        });
+    }
+    function saveNote(runId, requestId, hypothesisId, noteId) {
+        var content = document.getElementById('note-content').value.trim();
+        if (!content) return;
+        fetch('/api/notes', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({note_id: noteId, run_id: runId, request_id: requestId, hypothesis_id: hypothesisId, content: content})
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d.success) {
+                var modal = document.getElementById('note-modal');
+                if (modal) modal.remove();
+            }
+        });
+    }
+
+    // Expand All / Collapse All
+    function toggleAllDetails(open) {
+        document.querySelectorAll('#hypothesis-list > .hyp-detail').forEach(d => { d.open = open; });
+        // Trigger highlighting for newly opened
+        if (open) highlightVisible();
+    }
+
+    // Lazy highlight code blocks when details are opened
+    function highlightVisible() {
+        document.querySelectorAll('details[open] code').forEach(block => {
+            if (!block.dataset.highlighted) {
+                hljs.highlightElement(block);
+                block.dataset.highlighted = 'true';
+            }
+        });
+    }
+
+    document.querySelectorAll('details').forEach(d => {
+        d.addEventListener('toggle', () => { if (d.open) highlightVisible(); });
+    });
+
+    // Copy to clipboard
+    function copyText(button, text) {
+        navigator.clipboard.writeText(text).then(() => {
+            const orig = button.innerHTML;
+            button.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Copied!';
+            setTimeout(() => { button.innerHTML = orig; }, 2000);
+        });
+    }
+
+    // Initial highlight for open details
+    highlightVisible();
+
+    // Auto-expand hypothesis from URL hash (e.g. #hyp-abc123)
+    (function() {
+        var hash = window.location.hash;
+        if (hash && hash.startsWith('#hyp-')) {
+            var el = document.getElementById(hash.substring(1));
+            if (el && el.tagName === 'DETAILS') {
+                el.open = true;
+                highlightVisible();
+                setTimeout(function() {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.style.boxShadow = '0 0 0 3px rgba(22, 90, 87, 0.3)';
+                    setTimeout(function() { el.style.boxShadow = ''; el.style.transition = 'box-shadow 1s ease'; }, 2000);
+                }, 100);
+            }
+        }
+    })();
+
+    // Live update when request is actively processing or run is still active
+    {% if item and (item.status not in ('completed', 'error') or run.status in ('running', 'processing', 'awaiting_approval')) %}
+    (function() {
+        var lastStatus = '{{ item.status }}';
+        var pollTimer = setInterval(function() {
+            fetch('/runs/{{ run.run_id }}/snapshot')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var thisReq = (data.request_items || []).find(function(r) { return r.request_id === '{{ item.request_id }}'; });
+                    if (!thisReq) return;
+
+                    // Update the status badge
+                    var statusEl = document.querySelector('.method-badge')?.closest('.flex')?.querySelector('.rounded.text-xs');
+                    if (statusEl) statusEl.textContent = thisReq.status;
+
+                    // Update metadata counters
+                    var hyps = (data.hypothesis_items || []).filter(function(h) { return h.request_id === '{{ item.request_id }}'; });
+                    var cells = document.querySelectorAll('.grid.grid-cols-2 .text-lg');
+                    if (cells.length >= 3) cells[2].textContent = hyps.length;  // hypotheses
+                    if (cells.length >= 4) cells[3].textContent = thisReq.findings_count || 0;  // findings
+
+                    // Update summary text
+                    var summaryEl = document.querySelector('.rounded-xl.bg-surface .text-sm .font-semibold');
+                    if (summaryEl && summaryEl.textContent === 'Summary:') {
+                        summaryEl.nextSibling.textContent = ' ' + (thisReq.summary || '');
+                    }
+
+                    // Only full reload when request transitions to completed (one-time)
+                    if (thisReq.status === 'completed' && lastStatus !== 'completed') {
+                        clearInterval(pollTimer);
+                        // Short delay to let final data settle, then reload
+                        setTimeout(function() { window.location.reload(); }, 1500);
+                    }
+                    // Also stop polling if run is done
+                    var runStatus = (data.run || {}).status || '';
+                    if (runStatus === 'completed' || runStatus === 'failed' || runStatus === 'canceled') {
+                        clearInterval(pollTimer);
+                        if (lastStatus !== thisReq.status) {
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        }
+                    }
+                    lastStatus = thisReq.status;
+                })
+                .catch(function() {});
+        }, 3000);
+    })();
+    {% endif %}
+</script>
+{% endblock %}

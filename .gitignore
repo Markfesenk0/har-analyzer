@@ -1,16 +1,40 @@
+# Secrets
 .env
 .env.*
 !.env.example
+
+# IDE / editor
+.vscode/
+.idea/
+.claude/
+
+# Python
 .venv/
 __pycache__/
 *.pyc
-*.sqlite
-*.sqlite3
-artifacts/
-reports/
-HAR files/*.har
+*.egg-info/
 dist/
 build/
 .pytest_cache/
 .mypy_cache/
 
+# Runtime data
+artifacts/
+reports/
+*.sqlite
+*.sqlite3
+server_output.log
+
+# HAR files
+HAR files/*.har
+
+HAR Analyzer Dashboard/
+
+# Markdown
+*.md
+!README.md
+
+# Legacy files
+har_scanner.py
+sitecustomize.py
+har_analyzer/

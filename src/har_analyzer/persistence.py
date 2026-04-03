@@ -134,6 +134,19 @@ class RunStore(object):
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notes (
+                    note_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL DEFAULT '',
+                    request_id TEXT NOT NULL DEFAULT '',
+                    hypothesis_id TEXT NOT NULL DEFAULT '',
+                    content TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             self._ensure_run_columns(connection)
             self._ensure_request_item_columns(connection)
             self._ensure_hypothesis_item_columns(connection)
@@ -176,6 +189,7 @@ class RunStore(object):
         columns = {row[1] for row in connection.execute("PRAGMA table_info(hypothesis_items)").fetchall()}
         desired = {
             "attempt_index": "INTEGER NOT NULL DEFAULT 1",
+            "llm_validation_json": "TEXT NOT NULL DEFAULT ''",
         }
         for name, definition in desired.items():
             if name not in columns:
@@ -491,7 +505,7 @@ class RunStore(object):
         query = """
             SELECT run_id, request_id, hypothesis_id, attempt_index, sequence_index, attack_type, severity, mutation_summary, rationale, expected_signal,
                    method, url, headers_json, body, status, stage, execution_outcome, execution_error, response_status_code,
-                   response_headers_json, response_body, findings_count, updated_at
+                   response_headers_json, response_body, findings_count, COALESCE(llm_validation_json, '') as llm_validation_json, updated_at
             FROM hypothesis_items
             WHERE run_id = ?
         """
@@ -526,7 +540,8 @@ class RunStore(object):
                 response_headers_json=row[19],
                 response_body=row[20],
                 findings_count=row[21],
-                updated_at=row[22],
+                llm_validation_json=row[22],
+                updated_at=row[23],
             )
             for row in rows
         ]
@@ -582,6 +597,81 @@ class RunStore(object):
                 (run_id,),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def list_all_findings(self, run_id: Optional[str] = None, severity: Optional[str] = None, limit: int = 500) -> List[dict]:
+        """List findings across all runs or filtered by run_id/severity."""
+        with self._connect() as connection:
+            query = "SELECT finding_json FROM findings WHERE 1=1"
+            params = []
+            if run_id:
+                query += " AND run_id = ?"
+                params.append(run_id)
+            if severity:
+                query += " AND severity = ?"
+                params.append(severity.lower())
+            query += " ORDER BY severity DESC, endpoint ASC LIMIT ?"
+            params.append(limit)
+            rows = connection.execute(query, params).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def delete_run(self, run_id: str) -> None:
+        """Delete a run and all associated data (findings, request items, notes, etc.)."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM notes WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM findings WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM llm_attempt_items WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM hypothesis_items WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM request_items WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+            connection.commit()
+
+    # --- Notes ---
+
+    def save_note(self, note_id: str, run_id: str, request_id: str, hypothesis_id: str, content: str) -> None:
+        now = datetime.utcnow().isoformat() + "Z"
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO notes (note_id, run_id, request_id, hypothesis_id, content, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(note_id) DO UPDATE SET content = ?, updated_at = ?""",
+                (note_id, run_id, request_id, hypothesis_id, content, now, now, content, now),
+            )
+
+    def get_notes(self, run_id: Optional[str] = None, request_id: Optional[str] = None, hypothesis_id: Optional[str] = None) -> List[Dict[str, str]]:
+        query = "SELECT note_id, run_id, request_id, hypothesis_id, content, created_at, updated_at FROM notes WHERE 1=1"
+        params: List[object] = []
+        if run_id:
+            query += " AND run_id = ?"
+            params.append(run_id)
+        if request_id:
+            query += " AND request_id = ?"
+            params.append(request_id)
+        if hypothesis_id:
+            query += " AND hypothesis_id = ?"
+            params.append(hypothesis_id)
+        query += " ORDER BY updated_at DESC"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {"note_id": r[0], "run_id": r[1], "request_id": r[2], "hypothesis_id": r[3], "content": r[4], "created_at": r[5], "updated_at": r[6]}
+            for r in rows
+        ]
+
+    def get_all_notes(self) -> List[Dict[str, str]]:
+        return self.get_notes()
+
+    def delete_note(self, note_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM notes WHERE note_id = ?", (note_id,))
+
+    def get_note_counts(self, run_id: str) -> Dict[str, int]:
+        """Get note counts grouped by request_id for a run."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT request_id, COUNT(*) FROM notes WHERE run_id = ? AND request_id != '' GROUP BY request_id",
+                (run_id,),
+            ).fetchall()
+        return {r[0]: r[1] for r in rows}
 
     def get_request_items(self, run_id: str) -> List[RequestRunItem]:
         with self._connect() as connection:

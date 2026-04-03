@@ -7,16 +7,17 @@ import traceback
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .config import validate_langsmith_env, validate_run_config
+from .config import disable_langsmith_if_unconfigured, validate_run_config
 from .context import build_endpoint_context
-from .evaluation import evaluate_result
+from .evaluation import evaluate_result, validate_findings_with_llm
 from .executor import Transport, execute_hypothesis, should_fire
 from .har import build_scoped_har_payload, filter_records, har_to_records, load_har
 from .hypotheses import LLMClient, ProviderResponseError, get_llm_client
-from .models import AttackHypothesis, EndpointBudget, ExecutionResult, Finding, RequestRecord, RunConfig, RunRecord
+from .models import AttackHypothesis, EndpointBudget, ExecutionResult, Finding, RequestRecord, RunConfig, RunRecord, TokenInjectionRule
 from .persistence import RunStore
 from .redaction import maybe_redact_value, sanitize_har_payload
 from .reporting import write_reports
+from .token_registry import TokenHistory
 
 GraphState = Dict[str, object]
 ProgressCallback = Callable[[str, str, Dict[str, object]], None]
@@ -70,22 +71,42 @@ def run_scan(
     store: Optional[RunStore] = None,
     run: Optional[RunRecord] = None,
 ) -> RunRecord:
-    validate_langsmith_env()
+    disable_langsmith_if_unconfigured()
 
-    # Validate config before running
+    # Validate config before running (only block on real errors, not warnings)
     config_errors = validate_run_config(config)
-    if config_errors:
-        error_msg = "Configuration validation failed:\n" + "\n".join("  - " + e for e in config_errors)
+    real_errors = [e for e in config_errors if not e.startswith("WARNING:")]
+    warnings = [e for e in config_errors if e.startswith("WARNING:")]
+    if warnings and progress_callback:
+        for w in warnings:
+            progress_callback("config_warning", w, {})
+    if real_errors:
+        error_msg = "Configuration validation failed:\n" + "\n".join("  - " + e for e in real_errors)
         raise ValueError(error_msg)
 
     store = store or RunStore(config.database_path)
     run = run or store.create_run(config)
     config.run_artifact_dir = run.artifact_dir
+
+    # Initialize token history for tracking discovered tokens
+    token_history = TokenHistory()
+
+    # Create separate client for validation if a different model is configured
+    hypothesis_client = llm_client or get_llm_client(config)
+    if config.validation_model and config.validation_model != config.model:
+        from copy import copy
+        validation_config = copy(config)
+        validation_config.model = config.validation_model
+        validation_client = get_llm_client(validation_config)
+    else:
+        validation_client = hypothesis_client
+
     state: GraphState = {
         "config": config,
         "store": store,
         "run": run,
-        "llm_client": llm_client or get_llm_client(config),
+        "llm_client": hypothesis_client,
+        "validation_client": validation_client,
         "transport": transport,
         "progress_callback": progress_callback,
         "records": [],
@@ -95,6 +116,7 @@ def run_scan(
         "findings": [],
         "execution_results": [],
         "findings_by_request": {},
+        "token_history": token_history,
     }
     try:
         compiled = build_graph()
@@ -157,6 +179,55 @@ def enrich_context(state: GraphState) -> GraphState:
     return state
 
 
+def _backfill_baseline_response(record: RequestRecord, config: RunConfig, store: Optional[RunStore], run: Optional[RunRecord], transport: Optional[Transport], progress_callback: Optional[ProgressCallback]) -> None:
+    """If the HAR didn't capture the response body, replay the original request to get it."""
+    if record.response_body and record.response_body.strip():
+        return  # Already have it
+    if not record.url:
+        return
+
+    try:
+        # Build a "no mutation" hypothesis — just replay the original request exactly
+        headers = dict(record.request_headers)
+        # Clean problematic headers
+        for bad_key in ("content-length", "Content-Length", "accept-encoding", "Accept-Encoding", "connection", "Connection"):
+            headers.pop(bad_key, None)
+        headers.setdefault("Accept-Encoding", "gzip, deflate")
+
+        body_str = record.request_body
+        if isinstance(body_str, (dict, list)):
+            body_str = json.dumps(body_str, ensure_ascii=False)
+
+        data = body_str.encode("utf-8") if body_str else None
+        import urllib.request as urllib_request
+        import urllib.error as urllib_error
+
+        req = urllib_request.Request(record.url, data=data, headers=headers, method=record.method.upper())
+        try:
+            with urllib_request.urlopen(req, timeout=config.request_timeout_seconds) as resp:
+                record.response_body = resp.read().decode("utf-8", "ignore")
+                record.response_status = resp.status
+                record.response_headers = dict(resp.headers.items())
+        except urllib_error.HTTPError as err:
+            record.response_body = err.read().decode("utf-8", "ignore")
+            record.response_status = err.code
+            record.response_headers = dict(err.headers.items())
+
+        # Update the stored request item with the captured baseline
+        if store and run and record.response_body:
+            store.update_request_item(
+                run.run_id,
+                record.request_id,
+                original_response_status=record.response_status or 0,
+                original_response_body=record.response_body[:50000],
+                original_response_headers_json=json.dumps(record.response_headers or {}),
+            )
+            if progress_callback:
+                progress_callback("backfill_baseline", "Captured missing baseline for %s (%d bytes)" % (record.endpoint_key(), len(record.response_body)), {"request_id": record.request_id})
+    except Exception:
+        pass  # Best effort — if it fails, we proceed without baseline
+
+
 def analyze_request(state: GraphState) -> GraphState:
     records = state["scoped_records"]
     current_index = int(state.get("current_index", 0))
@@ -166,6 +237,9 @@ def analyze_request(state: GraphState) -> GraphState:
     record = records[current_index]
     _honor_run_controls(state, record)
     state["current_record"] = record
+
+    # Backfill missing response body from HAR
+    _backfill_baseline_response(record, state["config"], state.get("store"), state.get("run"), state.get("transport"), state.get("progress_callback"))
     config = state["config"]
     llm_client = state["llm_client"]
     store = state["store"]
@@ -178,6 +252,10 @@ def analyze_request(state: GraphState) -> GraphState:
         state["current_index"] = current_index + 1
         return state
     existing_approval_state = existing_item.approval_state if existing_item is not None else "not_required"
+    # Re-check step_mode from DB in case user switched to auto mid-run
+    refreshed_run = store.get_run(run.run_id)
+    if refreshed_run and not refreshed_run.config.get("step_mode", config.step_mode):
+        config.step_mode = False
     approval_state = "pending" if config.step_mode else "auto"
     needs_manual_approval = config.step_mode
     if config.step_mode and existing_approval_state in {"approved", "skipped"}:
@@ -220,9 +298,36 @@ def analyze_request(state: GraphState) -> GraphState:
         store.update_run_progress(run.run_id, status="running")
     attempt_index = store.create_llm_attempt(run.run_id, record.request_id, llm_request_json)
     state["current_attempt_index"] = attempt_index
+    # Build factual scan context — what worked, what didn't, let the LLM decide
+    previously_tested = []
+    confirmed = []
+    infra_confirmed = []
+    INFRA_KEYWORDS = ("authorization header", "jwt", "algorithm", "remove auth", "token misuse")
+
+    for prev_hyp in store.get_hypothesis_items(run.run_id):
+        if prev_hyp.request_id == record.request_id:
+            continue
+        if prev_hyp.stage == "validated" and prev_hyp.findings_count > 0:
+            mutation_lower = prev_hyp.mutation_summary.lower()
+            is_infra = any(kw in mutation_lower for kw in INFRA_KEYWORDS)
+            entry = "%s on %s" % (prev_hyp.attack_type, prev_hyp.mutation_summary[:50])
+            if is_infra:
+                infra_confirmed.append(entry)
+            else:
+                confirmed.append(entry)
+
+    if infra_confirmed:
+        previously_tested.append({
+            "do_not_repeat": "These API-wide issues are already confirmed: %s" % "; ".join(infra_confirmed[:5]),
+        })
+    if confirmed:
+        previously_tested.append({
+            "context": "These endpoint-specific vulns were confirmed elsewhere (for your awareness, decide if relevant here): %s" % "; ".join(confirmed[:8]),
+        })
+
     _emit_progress(state, "analyze_request", "Analyzing %s" % record.endpoint_key(), request_id=record.request_id)
     try:
-        hypotheses = llm_client.generate_hypotheses(record, state["context"], config)
+        hypotheses = llm_client.generate_hypotheses(record, state["context"], config, previously_tested=previously_tested)
         _persist_llm_response_debug(
             store,
             run.run_id,
@@ -320,7 +425,19 @@ def analyze_request(state: GraphState) -> GraphState:
         status="completed",
         stage="hypotheses_generated",
     )
-    if hypotheses:
+    if hypotheses and config.hypotheses_only:
+        store.update_request_item(
+            run.run_id,
+            record.request_id,
+            status="completed",
+            stage="hypotheses_generated",
+            summary="Generated %d hypotheses (hypotheses-only mode)" % len(hypotheses),
+            hypothesis_count=len(hypotheses),
+            approval_state="approved" if config.step_mode else "auto",
+        )
+        store.refresh_run_counters(run.run_id)
+        state["current_index"] = current_index + 1
+    elif hypotheses:
         store.update_request_item(
             run.run_id,
             record.request_id,
@@ -379,6 +496,21 @@ def execute_attack_node(state: GraphState) -> GraphState:
         )
     else:
         result = execute_hypothesis(hypothesis, record, config, state.get("transport"))
+
+    # Track discovered tokens from response
+    if result.discovered_tokens and result.outcome in ("ok", "http_error"):
+        token_history: TokenHistory = state.get("token_history") or TokenHistory()
+        for header_name, token_value in result.discovered_tokens.items():
+            token_history.add_token(
+                header_name=header_name,
+                token_value=token_value,
+                source_endpoint=record.endpoint_key(),
+                response_status=result.status_code or 0,
+                hypothesis_id=hypothesis.hypothesis_id,
+            )
+            # Auto-inject the new token for subsequent requests
+            _update_token_injection_rule(config, header_name, token_value)
+
     state["current_hypothesis"] = hypothesis
     state["current_result"] = result
     state["execution_results"].append(result)
@@ -412,7 +544,48 @@ def evaluate_response_node(state: GraphState) -> GraphState:
     result = state["current_result"]
     store = state["store"]
     run = state["run"]
-    findings = evaluate_result(record, hypothesis, result)
+    config = state["config"]
+    validation_client = state.get("validation_client") or state.get("llm_client")
+
+    # Step 1: Generate preliminary findings with heuristic rules
+    preliminary_findings = evaluate_result(record, hypothesis, result)
+
+    # Step 2: LLM validation — always run when we have an LLM client and got a response
+    # Even if heuristics found 0 findings, the LLM might spot something they missed
+    validation_note = ""
+    validation_results = []
+    # Only call LLM validation when there's something to validate:
+    # - Always validate if heuristics found preliminary findings (confirm or reject)
+    # - For 0-finding cases: only review if the attack got 2xx (potential missed finding)
+    #   Skip 4xx/5xx with 0 findings — the security control clearly worked
+    should_validate = (
+        validation_client
+        and hasattr(validation_client, '_post_raw')
+        and result.response_body
+        and (
+            preliminary_findings  # Always validate existing findings
+            or (result.outcome == "ok" and result.status_code and 200 <= result.status_code < 300)  # Only review 2xx with 0 findings
+        )
+    )
+    if should_validate:
+        try:
+            if preliminary_findings:
+                _emit_progress(state, "llm_validation", "Validating %d finding(s) for %s" % (len(preliminary_findings), hypothesis.attack_type), request_id=record.request_id)
+            else:
+                _emit_progress(state, "llm_validation", "LLM reviewing 2xx response for %s" % hypothesis.attack_type, request_id=record.request_id)
+            validated, validation_results = validate_findings_with_llm(validation_client, record, hypothesis, result, preliminary_findings, config)
+            dropped = len(preliminary_findings) - len(validated)
+            if dropped > 0:
+                _emit_progress(state, "llm_validation", "Filtered out %d false positive(s) for %s" % (dropped, hypothesis.attack_type), request_id=record.request_id)
+                validation_note = " (%d false positive(s) filtered)" % dropped
+            findings = validated
+        except Exception as exc:
+            _emit_progress(state, "llm_validation_error", "LLM validation failed: %s — using heuristic findings" % exc, request_id=record.request_id)
+            findings = preliminary_findings
+            validation_note = " (unvalidated — LLM error)"
+    else:
+        findings = preliminary_findings
+
     state["findings"].extend(findings)
     request_findings = int(state["findings_by_request"].get(record.request_id, 0)) + len(findings)
     state["findings_by_request"][record.request_id] = request_findings
@@ -424,26 +597,46 @@ def evaluate_response_node(state: GraphState) -> GraphState:
         status="completed" if is_done else "running",
         stage="completed" if is_done else "evaluate_response",
         findings_count=request_findings,
-        summary="Finished with %d finding(s)" % request_findings if is_done else "Evaluating response",
+        summary="Finished with %d finding(s)%s" % (request_findings, validation_note) if is_done else "Evaluating response",
     )
-    store.update_hypothesis_item(
-        run.run_id,
-        hypothesis.hypothesis_id,
-        status="completed",
-        stage="completed" if findings else "evaluated",
-        findings_count=len(findings),
-    )
+    hyp_stage = "validated" if findings else ("false_positive" if preliminary_findings and not findings else "evaluated")
+    hyp_update = {
+        "status": "completed",
+        "stage": hyp_stage,
+        "findings_count": len(findings),
+    }
+    if validation_results:
+        hyp_update["llm_validation_json"] = json.dumps(validation_results, ensure_ascii=False)
+    store.update_hypothesis_item(run.run_id, hypothesis.hypothesis_id, **hyp_update)
     if is_done:
         store.refresh_run_counters(run.run_id)
         state["current_index"] = int(state.get("current_index", 0)) + 1
-    _emit_progress(state, "evaluate_response", "Evaluated %s for %s" % (hypothesis.attack_type, record.endpoint_key()), request_id=record.request_id, findings=len(findings))
+    _emit_progress(state, "evaluate_response", "Evaluated %s for %s — %d confirmed finding(s)%s" % (hypothesis.attack_type, record.endpoint_key(), len(findings), validation_note), request_id=record.request_id, findings=len(findings))
     return state
+
+
+
+def _deduplicate_findings(findings: list) -> list:
+    """Group findings by endpoint+attack_type, keep only the highest severity per group."""
+    severity_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    groups: Dict[str, list] = {}
+    for f in findings:
+        key = "%s|%s" % (f.endpoint, f.attack_type)
+        groups.setdefault(key, []).append(f)
+    deduped = []
+    for key, group in groups.items():
+        group.sort(key=lambda f: severity_rank.get(f.severity, 0), reverse=True)
+        deduped.append(group[0])
+    return deduped
 
 
 def persist_and_report(state: GraphState) -> GraphState:
     run = state["run"]
     store = state["store"]
-    findings = state["findings"]
+    raw_findings = state["findings"]
+    findings = _deduplicate_findings(raw_findings)
+    if len(raw_findings) != len(findings):
+        _emit_progress(state, "dedup", "Deduplicated %d → %d findings" % (len(raw_findings), len(findings)))
     markdown_path, json_path = write_reports(run, findings, unsafe=state["config"].allow_unsafe_artifacts)
     store.finalize_run(run, findings, markdown_path, json_path)
     store.refresh_run_counters(run.run_id)
@@ -457,7 +650,8 @@ def persist_and_report(state: GraphState) -> GraphState:
 def _route_after_analyze(state: GraphState) -> str:
     hypotheses = state.get("current_hypotheses", [])
     scoped_records = state.get("scoped_records", [])
-    if hypotheses:
+    config: RunConfig = state["config"]
+    if hypotheses and not config.hypotheses_only:
         return "execute_attack"
     if int(state.get("current_index", 0)) < len(scoped_records):
         return "analyze_request"
@@ -480,14 +674,34 @@ def _run_sequential(state: GraphState) -> None:
     filter_scope(state)
     redact_input_copy(state)
     enrich_context(state)
+    config: RunConfig = state["config"]
     state["current_index"] = 0
     records = state["scoped_records"]
     while int(state.get("current_index", 0)) < len(records):
         analyze_request(state)
-        while int(state.get("current_hypothesis_index", 0)) < len(state.get("current_hypotheses", [])):
-            execute_attack_node(state)
-            evaluate_response_node(state)
+        if not config.hypotheses_only:
+            while int(state.get("current_hypothesis_index", 0)) < len(state.get("current_hypotheses", [])):
+                execute_attack_node(state)
+                evaluate_response_node(state)
     persist_and_report(state)
+
+
+def _update_token_injection_rule(config: RunConfig, header_name: str, token_value: str) -> None:
+    """Update or add token injection rule with newly discovered token."""
+    # Look for existing rule with same header
+    for rule in config.token_injection_rules:
+        if rule.header_name == header_name:
+            rule.token_value = token_value
+            return
+
+    # No existing rule, add a new one
+    config.token_injection_rules.append(
+        TokenInjectionRule(
+            header_name=header_name,
+            token_value=token_value,
+            applies_to_endpoints=[],  # Empty = applies to all
+        )
+    )
 
 
 def _emit_progress(state: GraphState, stage: str, message: str, **payload) -> None:
