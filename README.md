@@ -8,8 +8,6 @@ It uses an LLM to figure out what's worth testing on each endpoint (IDOR, auth b
 
 ## Screenshots
 
-## Screenshots
-
 ### Dashboard
 ![Dashboard](docs/screenshots/Dashboard.png)
 
