@@ -150,6 +150,7 @@ class RunStore(object):
             self._ensure_run_columns(connection)
             self._ensure_request_item_columns(connection)
             self._ensure_hypothesis_item_columns(connection)
+            self._ensure_llm_attempt_columns(connection)
 
     def _ensure_run_columns(self, connection: sqlite3.Connection) -> None:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)").fetchall()}
@@ -160,6 +161,11 @@ class RunStore(object):
             "last_error": "TEXT NOT NULL DEFAULT ''",
             "pause_requested": "INTEGER NOT NULL DEFAULT 0",
             "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+            "total_prompt_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "total_completion_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "total_estimated_cost_usd": "REAL NOT NULL DEFAULT 0.0",
+            "llm_call_count": "INTEGER NOT NULL DEFAULT 0",
+            "cost_unavailable_count": "INTEGER NOT NULL DEFAULT 0",
         }
         for name, definition in desired.items():
             if name not in columns:
@@ -190,10 +196,30 @@ class RunStore(object):
         desired = {
             "attempt_index": "INTEGER NOT NULL DEFAULT 1",
             "llm_validation_json": "TEXT NOT NULL DEFAULT ''",
+            "validation_prompt_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "validation_completion_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "validation_total_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "validation_estimated_cost_usd": "REAL NOT NULL DEFAULT 0.0",
+            "validation_model_used": "TEXT NOT NULL DEFAULT ''",
+            "validation_cost_available": "INTEGER NOT NULL DEFAULT 0",
         }
         for name, definition in desired.items():
             if name not in columns:
                 connection.execute("ALTER TABLE hypothesis_items ADD COLUMN %s %s" % (name, definition))
+
+    def _ensure_llm_attempt_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(llm_attempt_items)").fetchall()}
+        desired = {
+            "prompt_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "completion_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "total_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "estimated_cost_usd": "REAL NOT NULL DEFAULT 0.0",
+            "model_used": "TEXT NOT NULL DEFAULT ''",
+            "cost_available": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, definition in desired.items():
+            if name not in columns:
+                connection.execute("ALTER TABLE llm_attempt_items ADD COLUMN %s %s" % (name, definition))
 
     def create_run(self, config: RunConfig) -> RunRecord:
         run_id = datetime.utcnow().strftime("run-%Y%m%d-%H%M%S")
@@ -303,6 +329,34 @@ class RunStore(object):
         params.append(run_id)
         with self._connect() as connection:
             connection.execute("UPDATE runs SET %s WHERE run_id = ?" % ", ".join(assignments), params)
+
+    def add_run_cost(
+        self,
+        run_id: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        estimated_cost_usd: float,
+        cost_available: bool,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET total_prompt_tokens = COALESCE(total_prompt_tokens, 0) + ?,
+                    total_completion_tokens = COALESCE(total_completion_tokens, 0) + ?,
+                    total_estimated_cost_usd = COALESCE(total_estimated_cost_usd, 0.0) + ?,
+                    llm_call_count = COALESCE(llm_call_count, 0) + 1,
+                    cost_unavailable_count = COALESCE(cost_unavailable_count, 0) + ?
+                WHERE run_id = ?
+                """,
+                (
+                    int(prompt_tokens or 0),
+                    int(completion_tokens or 0),
+                    float(estimated_cost_usd or 0.0),
+                    0 if cost_available else 1,
+                    run_id,
+                ),
+            )
 
     def request_pause(self, run_id: str) -> None:
         with self._connect() as connection:
@@ -414,7 +468,9 @@ class RunStore(object):
     def get_llm_attempt_items(self, run_id: str, request_id: Optional[str] = None) -> List[LLMAttemptRunItem]:
         query = """
             SELECT run_id, request_id, attempt_index, status, stage, llm_request_json, llm_response_text,
-                   llm_response_message_content, debug_artifact_path, error, updated_at
+                   llm_response_message_content, debug_artifact_path, error, updated_at,
+                   COALESCE(prompt_tokens, 0), COALESCE(completion_tokens, 0), COALESCE(total_tokens, 0),
+                   COALESCE(estimated_cost_usd, 0.0), COALESCE(model_used, ''), COALESCE(cost_available, 0)
             FROM llm_attempt_items
             WHERE run_id = ?
         """
@@ -438,6 +494,12 @@ class RunStore(object):
                 debug_artifact_path=row[8],
                 error=row[9],
                 updated_at=row[10],
+                prompt_tokens=row[11],
+                completion_tokens=row[12],
+                total_tokens=row[13],
+                estimated_cost_usd=row[14],
+                model_used=row[15],
+                cost_available=bool(row[16]),
             )
             for row in rows
         ]
@@ -505,7 +567,9 @@ class RunStore(object):
         query = """
             SELECT run_id, request_id, hypothesis_id, attempt_index, sequence_index, attack_type, severity, mutation_summary, rationale, expected_signal,
                    method, url, headers_json, body, status, stage, execution_outcome, execution_error, response_status_code,
-                   response_headers_json, response_body, findings_count, COALESCE(llm_validation_json, '') as llm_validation_json, updated_at
+                   response_headers_json, response_body, findings_count, COALESCE(llm_validation_json, '') as llm_validation_json, updated_at,
+                   COALESCE(validation_prompt_tokens, 0), COALESCE(validation_completion_tokens, 0), COALESCE(validation_total_tokens, 0),
+                   COALESCE(validation_estimated_cost_usd, 0.0), COALESCE(validation_model_used, ''), COALESCE(validation_cost_available, 0)
             FROM hypothesis_items
             WHERE run_id = ?
         """
@@ -542,6 +606,12 @@ class RunStore(object):
                 findings_count=row[21],
                 llm_validation_json=row[22],
                 updated_at=row[23],
+                validation_prompt_tokens=row[24],
+                validation_completion_tokens=row[25],
+                validation_total_tokens=row[26],
+                validation_estimated_cost_usd=row[27],
+                validation_model_used=row[28],
+                validation_cost_available=bool(row[29]),
             )
             for row in rows
         ]
@@ -571,6 +641,7 @@ class RunStore(object):
                 """
                 SELECT run_id, created_at, status, har_path, target_domains, artifact_dir, report_markdown_path, report_json_path, findings_count, config_json
                     , total_requests, processed_requests, current_endpoint, last_error, pause_requested, cancel_requested
+                    , COALESCE(total_prompt_tokens, 0), COALESCE(total_completion_tokens, 0), COALESCE(total_estimated_cost_usd, 0.0), COALESCE(llm_call_count, 0), COALESCE(cost_unavailable_count, 0)
                 FROM runs
                 ORDER BY created_at DESC
                 """
@@ -583,6 +654,7 @@ class RunStore(object):
                 """
                 SELECT run_id, created_at, status, har_path, target_domains, artifact_dir, report_markdown_path, report_json_path, findings_count, config_json
                     , total_requests, processed_requests, current_endpoint, last_error, pause_requested, cancel_requested
+                    , COALESCE(total_prompt_tokens, 0), COALESCE(total_completion_tokens, 0), COALESCE(total_estimated_cost_usd, 0.0), COALESCE(llm_call_count, 0), COALESCE(cost_unavailable_count, 0)
                 FROM runs
                 WHERE run_id = ?
                 """,
@@ -738,4 +810,9 @@ class RunStore(object):
             last_error=row[13] if len(row) > 13 else "",
             pause_requested=bool(row[14]) if len(row) > 14 else False,
             cancel_requested=bool(row[15]) if len(row) > 15 else False,
+            total_prompt_tokens=row[16] if len(row) > 16 else 0,
+            total_completion_tokens=row[17] if len(row) > 17 else 0,
+            total_estimated_cost_usd=row[18] if len(row) > 18 else 0.0,
+            llm_call_count=row[19] if len(row) > 19 else 0,
+            cost_unavailable_count=row[20] if len(row) > 20 else 0,
         )

@@ -54,6 +54,7 @@ class RunConfig:
     hypotheses_only: bool = False
     redact_by_default: bool = False
     token_injection_rules: List[TokenInjectionRule] = field(default_factory=list)
+    prompt_version: str = "v1"
 
     def to_dict(self) -> Dict[str, Any]:
         return _serialize(self)
@@ -199,6 +200,11 @@ class RunRecord:
     pause_requested: bool = False
     cancel_requested: bool = False
     config: Dict[str, Any] = field(default_factory=dict)
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_estimated_cost_usd: float = 0.0
+    llm_call_count: int = 0
+    cost_unavailable_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return _serialize(self)
@@ -264,6 +270,12 @@ class HypothesisRunItem:
     response_body: str = ""
     findings_count: int = 0
     llm_validation_json: str = ""
+    validation_prompt_tokens: int = 0
+    validation_completion_tokens: int = 0
+    validation_total_tokens: int = 0
+    validation_estimated_cost_usd: float = 0.0
+    validation_model_used: str = ""
+    validation_cost_available: bool = False
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
 
     def to_dict(self) -> Dict[str, Any]:
@@ -282,6 +294,12 @@ class LLMAttemptRunItem:
     llm_response_message_content: str = ""
     debug_artifact_path: str = ""
     error: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    model_used: str = ""
+    cost_available: bool = False
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
 
     def to_dict(self) -> Dict[str, Any]:

@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, Optional
 
 from .config import disable_langsmith_if_unconfigured, validate_run_config
 from .context import build_endpoint_context
+from .cost import UsageRecord
 from .evaluation import evaluate_result, validate_findings_with_llm
 from .executor import Transport, execute_hypothesis, should_fire
 from .har import build_scoped_har_payload, filter_records, har_to_records, load_har
@@ -327,7 +328,10 @@ def analyze_request(state: GraphState) -> GraphState:
 
     _emit_progress(state, "analyze_request", "Analyzing %s" % record.endpoint_key(), request_id=record.request_id)
     try:
+        if hasattr(llm_client, "last_usage"):
+            llm_client.last_usage = None
         hypotheses = llm_client.generate_hypotheses(record, state["context"], config, previously_tested=previously_tested)
+        _record_llm_usage(store, run.run_id, getattr(llm_client, "last_usage", None), request_id=record.request_id, attempt_index=attempt_index or 1)
         _persist_llm_response_debug(
             store,
             run.run_id,
@@ -573,7 +577,15 @@ def evaluate_response_node(state: GraphState) -> GraphState:
                 _emit_progress(state, "llm_validation", "Validating %d finding(s) for %s" % (len(preliminary_findings), hypothesis.attack_type), request_id=record.request_id)
             else:
                 _emit_progress(state, "llm_validation", "LLM reviewing 2xx response for %s" % hypothesis.attack_type, request_id=record.request_id)
+            if hasattr(validation_client, "last_usage"):
+                validation_client.last_usage = None
             validated, validation_results = validate_findings_with_llm(validation_client, record, hypothesis, result, preliminary_findings, config)
+            _record_llm_usage(
+                store,
+                run.run_id,
+                getattr(validation_client, "last_usage", None),
+                hypothesis_id=hypothesis.hypothesis_id,
+            )
             dropped = len(preliminary_findings) - len(validated)
             if dropped > 0:
                 _emit_progress(state, "llm_validation", "Filtered out %d false positive(s) for %s" % (dropped, hypothesis.attack_type), request_id=record.request_id)
@@ -789,6 +801,49 @@ def _wait_for_llm_approval(state: GraphState, record: RequestRecord) -> str:
             _emit_progress(state, "skipped_llm", "Skipped %s before LLM send" % record.endpoint_key(), request_id=record.request_id)
             return "skipped"
         time.sleep(1.0)
+
+
+def _record_llm_usage(
+    store: RunStore,
+    run_id: str,
+    usage: Optional[UsageRecord],
+    *,
+    request_id: Optional[str] = None,
+    attempt_index: Optional[int] = None,
+    hypothesis_id: Optional[str] = None,
+) -> None:
+    if usage is None:
+        return
+    if request_id is not None and attempt_index is not None:
+        store.update_llm_attempt(
+            run_id,
+            request_id,
+            attempt_index,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            estimated_cost_usd=usage.estimated_cost_usd,
+            model_used=usage.model,
+            cost_available=1 if usage.cost_available else 0,
+        )
+    if hypothesis_id is not None:
+        store.update_hypothesis_item(
+            run_id,
+            hypothesis_id,
+            validation_prompt_tokens=usage.prompt_tokens,
+            validation_completion_tokens=usage.completion_tokens,
+            validation_total_tokens=usage.total_tokens,
+            validation_estimated_cost_usd=usage.estimated_cost_usd,
+            validation_model_used=usage.model,
+            validation_cost_available=1 if usage.cost_available else 0,
+        )
+    store.add_run_cost(
+        run_id,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        estimated_cost_usd=usage.estimated_cost_usd,
+        cost_available=usage.cost_available,
+    )
 
 
 def _persist_llm_response_debug(

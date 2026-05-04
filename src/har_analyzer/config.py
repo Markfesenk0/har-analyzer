@@ -236,6 +236,7 @@ def load_run_config(
         hypotheses_only=hypotheses_only,
         redact_by_default=_env_bool("HAR_ANALYZER_REDACT_BY_DEFAULT", False),
         token_injection_rules=token_injection_rules,
+        prompt_version=os.getenv("HAR_ANALYZER_PROMPT_VERSION", "v1"),
     )
 
 

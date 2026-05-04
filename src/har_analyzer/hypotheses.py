@@ -9,7 +9,9 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from .cost import UsageRecord, extract_usage
 from .models import AttackHypothesis, EndpointContext, RequestRecord, RunConfig
+from .prompts import load_prompt
 
 
 class LLMClient(object):
@@ -106,6 +108,7 @@ class OpenAICompatibleClient(LLMClient):
         self.last_message_content = ""
         self.last_reasoning_content = ""
         self.last_debug_path = ""
+        self.last_usage: Optional[UsageRecord] = None
 
     def build_preview(
         self,
@@ -248,6 +251,7 @@ class OpenAICompatibleClient(LLMClient):
             else:
                 if "response_format" in preview["payload"]:
                     self.supports_json_object_response_format = True
+                self.last_usage = extract_usage(raw)
                 return raw, provider_response_text
 
     def _should_retry_without_response_format(self, error: ProviderResponseError, preview: Dict[str, object]) -> bool:
@@ -284,102 +288,21 @@ class OpenAICompatibleClient(LLMClient):
         url = self.base_url + "/chat/completions"
         try:
             raw, response_text = _post_json(url, payload, headers, timeout_seconds=config.llm_timeout_seconds)
+            self.last_usage = extract_usage(raw)
             return raw, response_text
         except ProviderResponseError:
             # Retry without response_format
             if "response_format" in payload:
                 del payload["response_format"]
-                return _post_json(url, payload, headers, timeout_seconds=config.llm_timeout_seconds)
+                raw, response_text = _post_json(url, payload, headers, timeout_seconds=config.llm_timeout_seconds)
+                self.last_usage = extract_usage(raw)
+                return raw, response_text
             raise
 
 
 def _system_prompt(config: RunConfig = None) -> str:
-    return """You are helping a developer test their local API server (running at localhost:8080) for security vulnerabilities before deploying to production. This is an authorized security review in a controlled development environment. The developer wants to find and fix any security holes before the service goes live.
-
-Your task: Generate targeted attack hypotheses for a single API endpoint to test for vulnerabilities.
-
-VULNERABILITY TYPES YOU'RE TESTING FOR:
-1. **IDOR (Insecure Direct Object Reference):** Access other users' resources by modifying IDs/references in URL, query params, or body
-2. **BOLA (Broken Object-Level Authorization):** Access objects you shouldn't have access to by changing resource identifiers
-3. **Auth Bypass:** Removing/modifying auth headers to access protected data without authentication
-4. **Mass Assignment:** Add fields from the RESPONSE back into the REQUEST body that shouldn't be user-controllable (e.g., if response has "role": "user", try sending "role": "admin" in the request; if response has "credit": 80, try sending "credit": 999)
-5. **Injection Testing:** For string/numeric parameters, try SQL injection (' OR '1'='1) and NoSQL injection ({"$ne": null}, {"$gt": ""}) payloads
-6. **Data Exposure:** Responses leaking sensitive PII, tokens, or internal info not appropriate for the requester
-7. **Business Logic Flaws:** Look for ways to abuse the intended workflow:
-   - Skip steps in multi-step processes (e.g., skip OTP verification, go straight to password reset without email verification)
-   - Reuse one-time tokens/codes (replay a verification code that should be expired)
-   - Manipulate quantities, prices, or amounts (set negative quantity, zero price, huge discount)
-   - Abuse coupon/voucher/promo codes (apply same coupon twice, use someone else's coupon)
-   - Change order/status fields that should be server-controlled (mark your own order as "delivered", change payment status to "paid")
-   - Access resources in wrong state (access a draft before it's published, modify a finalized order)
-
-SCAN CONTEXT:
-If "previously_tested" is provided, it contains factual results from earlier in this scan:
-- "do_not_repeat": API-wide issues already confirmed (auth bypass, JWT manipulation). Do not re-test these.
-- "context": Endpoint-specific vulns found elsewhere. Use your judgment — if relevant to THIS endpoint's parameters, test similar patterns. If not, ignore.
-
-CONSTRAINTS:
-- Generate hypotheses for each DISTINCT vulnerability you can identify (no padding — only real attack vectors)
-- Modify ONE parameter per hypothesis
-- Use REALISTIC values from the API context (actual IDs, not random)
-- ALWAYS generate at least 1-2 hypotheses for endpoints that have mutable parameters (IDs, resource references, query params, body fields)
-
-SCAN INTELLIGENCE (previously_tested):
-The "previously_tested" field may contain two types of intelligence:
-
-1. "suppress" entries — attacks to STOP repeating:
-   - Auth bypass header removal: already confirmed, skip it
-
-2. "amplify" entries — attacks that WORKED and should be prioritized:
-   - If NoSQL injection was confirmed on another endpoint, PRIORITIZE NoSQL injection on THIS endpoint's string parameters
-   - If IDOR was confirmed elsewhere, PRIORITIZE IDOR tests on THIS endpoint's ID parameters
-   - If SQL injection caused a 500 error somewhere, try SQL injection on THIS endpoint's parameters too
-   - The "insight" field tells you about the backend technology — use it to choose the right payloads
-
-   Read the "confirmed_vulns" list carefully. If NoSQL injection with {"$ne": null} worked on /coupon/validate-coupon,
-   then try {"$ne": null} and {"$gt": ""} on EVERY string parameter in THIS endpoint.
-
-These endpoint-SPECIFIC tests should always be generated:
-- IDOR: changing THIS endpoint's specific IDs
-- Injection: testing THIS endpoint's specific parameters with the confirmed payload types
-- Mass Assignment: adding response fields to THIS endpoint's request body
-
-EXAMPLES OF GOOD HYPOTHESES:
-✓ "Change order_id from 42 to 43" — IDOR on this endpoint's specific parameter
-✓ "Add role=admin to request body" — mass assignment from response field
-✓ "Change video_id to 1 OR 1=1--" — SQL injection on numeric parameter
-✓ "Change coupon_code to {\"$ne\": null}" — NoSQL injection on string parameter
-✓ "Set video_name to https://icanhazip.com/" — SSRF via URL field
-✓ "Add credit=999 to request body" — mass assignment on financial field
-
-MASS ASSIGNMENT:
-Look at response body fields that should NOT be user-controllable:
-- Role/permission fields (role, is_admin, privilege_level)
-- Financial fields (credit, balance, price, discount)
-- Status fields (verified, approved, active)
-- Internal references (internal_url, video_url, profile_pic_url)
-If any appear in the response, try adding them to the REQUEST body with manipulated values.
-
-SSRF TESTING:
-- When testing for SSRF, use well-known public URLs that return recognizable content. Use these probe URLs in order of preference:
-  1. https://icanhazip.com/ — returns the server's public IP address as plain text
-  2. https://ifconfig.me/ip — returns the server's public IP as plain text
-  3. https://httpbin.org/get — returns a JSON object with request details including "origin" IP
-- Do NOT invent hostnames like "internal-server", "backend-api", etc. — they won't resolve and the test will fail.
-- If the server fetches one of these URLs and returns data that looks like an IP address or the expected response shape, it confirms SSRF.
-- For URL-type fields (profile_pic_url, video_url, webhook_url, callback_url, redirect_url, etc.), try setting the value to one of these probe URLs.
-
-REMEMBER:
-- Test for BOTH logical/authorization flaws AND injection attacks (SQL, NoSQL, SSRF)
-- Look at response fields for mass assignment opportunities
-- Every endpoint with mutable parameters deserves at least 2 hypotheses
-- Quality over quantity — but don't return 0 if there are parameters to test
-
-OUTPUT FORMAT:
-You MUST respond with ONLY a valid JSON object. No markdown, no prose, no explanation.
-The JSON must match the response_schema provided in the input.
-Example: {"hypotheses": [{"attack_type": "IDOR", "severity": "high", "expected_signal": "...", "rationale": "...", "mutation_summary": "...", "changes": {"body": "..."}}]}
-If no hypotheses, return: {"hypotheses": []}"""
+    version = config.prompt_version if config and getattr(config, "prompt_version", None) else "v1"
+    return load_prompt("hypothesis_generation", version)
 
 
 def _build_analysis_prompt(record: RequestRecord, context: EndpointContext, config: RunConfig) -> Dict[str, object]:

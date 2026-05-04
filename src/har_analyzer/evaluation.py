@@ -7,6 +7,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from .models import AttackHypothesis, ExecutionResult, Finding, RequestRecord, RunConfig
+from .prompts import load_prompt
 from .redaction import redact_string, redact_value
 
 _MASKED_HOST = "localhost:8080"
@@ -547,44 +548,9 @@ def _truncate_body_for_llm(body_str: str, max_chars: int = 3000) -> str:
 # LLM-based finding validation
 # ---------------------------------------------------------------------------
 
-_VALIDATION_SYSTEM_PROMPT = """You are a security analyst reviewing automated vulnerability scan results.
-Your job is to compare the ORIGINAL API response (baseline) with the ATTACK response (from a mutated request)
-and determine if the attack actually revealed a real security vulnerability or if it's a false positive.
-
-CRITICAL RULE — SAME RESPONSE = FALSE POSITIVE:
-If the attack response body is substantially the same as the original response body (same fields, same values, same user data), the attack DID NOT WORK. Mark it as false_positive regardless of what PII is in the response. The PII was already there in the original — the attack didn't expose anything new.
-
-When IS it a real vulnerability:
-- The attack response contains a DIFFERENT user's data (different user_id, different email, different name) than the original
-- The attack response succeeds (2xx) when the mutation REMOVED authentication (and the original required auth)
-- The attack response returns MORE data than the original (extra fields, extra records NOT explained by normal creation)
-- The attack response shows a different credit/balance/role than the original AND this was caused by the mutation (mass assignment worked)
-- The error response leaks internal details (stack traces, SQL queries, internal paths)
-- An injection payload (SQL, NoSQL) returned data it shouldn't have (e.g., NoSQL $ne:null returned all records)
-- SSRF: The attack used a URL field to point to an external probe URL (icanhazip.com, ifconfig.me, httpbin.org) and the response contains content from that probe (e.g., an IP address, httpbin JSON) that was NOT in the original response. This confirms the server fetched the attacker-controlled URL.
-
-When is it NOT a vulnerability (FALSE POSITIVE):
-- Response is identical or near-identical to the original — the mutation was ignored
-- Response contains the same user's own PII — that's normal for authenticated endpoints
-- The attack sent a body on a GET request — servers ignore GET bodies, nothing happened
-- A 4xx error with a generic error message — the security control worked correctly
-- Transport error or timeout — inconclusive, not a finding
-- POST endpoint that CREATES resources returns a new/different ID — that's NORMAL behavior, not a vulnerability. Creating a ticket/order/report always generates a new ID. A different ID in the response does NOT mean the mutation worked unless the response contains ANOTHER USER'S data.
-- The response structure is the same but auto-generated fields differ (id, created_at, updated_at, timestamps) — these change on every request, not because of the mutation
-
-IMPORTANT — Understand the endpoint's PURPOSE:
-- POST endpoints that create resources (orders, tickets, reports, comments) will ALWAYS return new IDs. A new ID is NOT evidence of a vulnerability.
-- GET endpoints that return a specific resource — a different ID here IS suspicious (may indicate IDOR).
-- POST to a /comment endpoint creates a new comment — so subsequent responses will have MORE comments. That's normal, not injection.
-- If the response has more items/records than the original, ask: is this because the TEST ITSELF created data, or because the injection bypassed a filter? If the extra records belong to the SAME user and the endpoint is a creation endpoint, it's normal growth.
-- For injection testing: a real NoSQL/SQL injection finding means the response contains data from OTHER users or data that shouldn't be accessible. Just getting a 200 OK with your own data back is NOT proof of injection — the server may have just stored the literal string.
-- The question is always: does the response contain data belonging to a DIFFERENT USER or data the requester shouldn't have access to?
-
-Be VERY strict. Compare the actual data values between original and attack responses. If user_id, email, name are the same in both, it's a false positive.
-
-OUTPUT FORMAT:
-You MUST respond with ONLY a valid JSON object. No markdown, no prose, no explanation.
-Example: {"findings": [{"is_real_vulnerability": true, "severity": "high", "title": "IDOR on /api/orders", "reasoning": "...", "category": "IDOR"}]}"""
+def _validation_system_prompt(config: RunConfig) -> str:
+    version = config.prompt_version if config and getattr(config, "prompt_version", None) else "v1"
+    return load_prompt("finding_validation", version)
 
 _VALIDATION_RESPONSE_SCHEMA = {
     "findings": [
@@ -674,7 +640,7 @@ def validate_findings_with_llm(
     try:
         raw, response_text = llm_client._post_raw(
             json.dumps(prompt, ensure_ascii=False),
-            _VALIDATION_SYSTEM_PROMPT,
+            _validation_system_prompt(config),
             config,
         )
         content, _ = _extract_llm_content(raw)

@@ -5,7 +5,7 @@ import threading
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from collections import Counter
 
 from .har import filter_records, har_to_records
@@ -231,6 +231,33 @@ def create_app(artifact_dir: str = "artifacts"):
                     else:
                         estimated_remaining_time = f"{seconds}s"
 
+        # Compute generation vs validation cost split and per-request totals
+        gen_cost = sum(a.estimated_cost_usd for a in llm_attempt_items)
+        gen_tokens = sum(a.total_tokens for a in llm_attempt_items)
+        gen_calls = sum(1 for a in llm_attempt_items if a.total_tokens > 0 or a.estimated_cost_usd > 0)
+        val_cost = sum(h.validation_estimated_cost_usd for h in hypothesis_items)
+        val_tokens = sum(h.validation_total_tokens for h in hypothesis_items)
+        val_calls = sum(1 for h in hypothesis_items if h.validation_total_tokens > 0 or h.validation_estimated_cost_usd > 0)
+        any_cost_unavailable = bool(getattr(run, "cost_unavailable_count", 0))
+        cost_summary = {
+            "generation_cost_usd": gen_cost,
+            "generation_tokens": gen_tokens,
+            "generation_calls": gen_calls,
+            "validation_cost_usd": val_cost,
+            "validation_tokens": val_tokens,
+            "validation_calls": val_calls,
+            "any_cost_unavailable": any_cost_unavailable,
+        }
+        cost_per_request: Dict[str, Dict[str, float]] = {}
+        for a in llm_attempt_items:
+            entry = cost_per_request.setdefault(a.request_id, {"cost_usd": 0.0, "tokens": 0})
+            entry["cost_usd"] += a.estimated_cost_usd
+            entry["tokens"] += a.total_tokens
+        for h in hypothesis_items:
+            entry = cost_per_request.setdefault(h.request_id, {"cost_usd": 0.0, "tokens": 0})
+            entry["cost_usd"] += h.validation_estimated_cost_usd
+            entry["tokens"] += h.validation_total_tokens
+
         return templates.TemplateResponse(
             request=request,
             name="run_detail.html",
@@ -242,6 +269,8 @@ def create_app(artifact_dir: str = "artifacts"):
                 "request_items": [item.to_dict() for item in request_items],
                 "hypothesis_items": [item.to_dict() for item in hypothesis_items],
                 "llm_attempt_items": [item.to_dict() for item in llm_attempt_items],
+                "cost_summary": cost_summary,
+                "cost_per_request": cost_per_request,
                 # Slim versions for page-data JSON (no heavy response bodies)
                 "request_items_slim": [
                     {"request_id": i.request_id, "method": i.method, "path": i.path, "url": i.url,
@@ -641,6 +670,19 @@ def create_app(artifact_dir: str = "artifacts"):
                     info["model_verdict"] = "Could not parse provider response"
             parsed_attempts.append(info)
 
+        gen_cost = sum(a.estimated_cost_usd for a in llm_attempt_items)
+        gen_tokens = sum(a.total_tokens for a in llm_attempt_items)
+        val_cost = sum(h.validation_estimated_cost_usd for h in hypothesis_items)
+        val_tokens = sum(h.validation_total_tokens for h in hypothesis_items)
+        endpoint_cost = {
+            "generation_cost_usd": gen_cost,
+            "generation_tokens": gen_tokens,
+            "validation_cost_usd": val_cost,
+            "validation_tokens": val_tokens,
+            "total_cost_usd": gen_cost + val_cost,
+            "total_tokens": gen_tokens + val_tokens,
+        }
+
         return templates.TemplateResponse(
             request=request,
             name="request_detail.html",
@@ -654,6 +696,7 @@ def create_app(artifact_dir: str = "artifacts"):
                 "findings": findings,
                 "findings_by_hyp": _group_findings_by_hypothesis(findings),
                 "parsed_attempts": parsed_attempts,
+                "endpoint_cost": endpoint_cost,
             },
         )
 

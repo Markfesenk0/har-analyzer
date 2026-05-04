@@ -23,7 +23,7 @@ artifacts/
 reports/
 *.sqlite
 *.sqlite3
-server_output.log
+*.log
 
 # HAR files
 HAR files/*.har
@@ -33,6 +33,7 @@ HAR Analyzer Dashboard/
 # Markdown
 *.md
 !README.md
+docs/md/
 
 # Legacy files
 har_scanner.py

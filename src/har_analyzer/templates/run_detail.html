@@ -254,6 +254,42 @@
                 </div>
             </div>
 
+            <!-- LLM Usage & Cost -->
+            <div id="llm-usage" class="bg-white rounded-xl border border-primary/10 shadow-sm p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-text flex items-center gap-2">
+                        <i class="fa-solid fa-coins text-warning"></i>
+                        LLM Usage
+                        {% if cost_summary.any_cost_unavailable %}
+                            <span class="text-xs font-normal text-muted">(cost unavailable for some calls)</span>
+                        {% endif %}
+                    </h3>
+                    <span class="text-sm text-muted">{{ run.llm_call_count }} call{{ '' if run.llm_call_count == 1 else 's' }}</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="text-xs font-medium text-muted uppercase mb-2">Total Cost</div>
+                        <div class="text-2xl font-bold text-primary-dark">${{ '%.4f' | format(run.total_estimated_cost_usd or 0.0) }}</div>
+                        <div class="text-xs text-muted mt-1">all LLM calls</div>
+                    </div>
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="text-xs font-medium text-muted uppercase mb-2">Total Tokens</div>
+                        <div class="text-2xl font-bold text-primary-dark">{{ '{:,}'.format((run.total_prompt_tokens or 0) + (run.total_completion_tokens or 0)) }}</div>
+                        <div class="text-xs text-muted mt-1">{{ '{:,}'.format(run.total_prompt_tokens or 0) }} in / {{ '{:,}'.format(run.total_completion_tokens or 0) }} out</div>
+                    </div>
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="text-xs font-medium text-muted uppercase mb-2">Hypothesis gen</div>
+                        <div class="text-2xl font-bold text-primary-dark">${{ '%.4f' | format(cost_summary.generation_cost_usd) }}</div>
+                        <div class="text-xs text-muted mt-1">{{ cost_summary.generation_calls }} call{{ '' if cost_summary.generation_calls == 1 else 's' }} · {{ '{:,}'.format(cost_summary.generation_tokens) }} tok</div>
+                    </div>
+                    <div class="p-4 rounded-lg bg-surface border border-primary/10">
+                        <div class="text-xs font-medium text-muted uppercase mb-2">Validation</div>
+                        <div class="text-2xl font-bold text-primary-dark">${{ '%.4f' | format(cost_summary.validation_cost_usd) }}</div>
+                        <div class="text-xs text-muted mt-1">{{ cost_summary.validation_calls }} call{{ '' if cost_summary.validation_calls == 1 else 's' }} · {{ '{:,}'.format(cost_summary.validation_tokens) }} tok</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Two Column Layout -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
